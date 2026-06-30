@@ -81,11 +81,19 @@ function DashboardInner() {
             ))}
           </div>
         </div>
-        {user?.isAdmin && (
-          <Link href="/admin" className="btn-primary">
-            Open Admin Panel
+        <div className="flex flex-wrap gap-2">
+          <Link href="/portfolio" className="btn-ghost">
+            Portfolio
           </Link>
-        )}
+          <Link href="/settings" className="btn-ghost">
+            Settings
+          </Link>
+          {user?.isAdmin && (
+            <Link href="/admin" className="btn-primary">
+              Open Admin Panel
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Portfolio summary */}

@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: '/markets', label: 'Markets' },
   { href: '/trading', label: 'Trading' },
   { href: '/copy-trading', label: 'Copy Trading' },
+  { href: '/tools', label: 'Tools' },
   { href: '/pricing', label: 'Pricing' },
   { href: '/about', label: 'About' },
 ];

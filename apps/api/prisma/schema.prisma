@@ -45,6 +45,7 @@ model User {
   wallets       Wallet[]
   orders        Order[]
   transactions  Transaction[]
+  apiKeys       ApiKey[]
   auditLogs     AuditLog[]      @relation("ActorLogs")
   assignedRoles UserRole[]      @relation("AssignedBy")
 
@@ -201,6 +202,21 @@ model Transaction {
   @@index([userId])
   @@index([status])
   @@index([type])
+}
+
+model ApiKey {
+  id        String    @id @default(cuid())
+  userId    String
+  label     String
+  prefix    String // shown to the user, e.g. nxp_live_AbC1
+  lastFour  String
+  revoked   Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  lastUsed  DateTime?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------

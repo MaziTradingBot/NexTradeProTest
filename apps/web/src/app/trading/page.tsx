@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { Navbar } from '@/components/Navbar';
+import { OrderBook } from '@/components/OrderBook';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useTickers, assetName } from '@/lib/useTickers';
@@ -23,6 +24,16 @@ interface Kline {
   low: number;
 }
 
+interface OpenOrder {
+  id: string;
+  symbol: string;
+  side: string;
+  type: string;
+  price: string;
+  amount: string;
+  status: string;
+}
+
 function TradingTerminal() {
   const params = useSearchParams();
   const symbol = (params.get('symbol') || 'BTCUSDT').toUpperCase();
@@ -33,7 +44,10 @@ function TradingTerminal() {
   const [klines, setKlines] = useState<Kline[]>([]);
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [amount, setAmount] = useState('');
+  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
+  const [limitPrice, setLimitPrice] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+  const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
 
   useEffect(() => {
     api
@@ -41,6 +55,21 @@ function TradingTerminal() {
       .then(setKlines)
       .catch(() => setKlines([]));
   }, [symbol]);
+
+  const loadOrders = () => {
+    if (!user) return;
+    api.get<OpenOrder[]>('/api/account/orders').then(setOpenOrders).catch(() => {});
+  };
+  useEffect(loadOrders, [user]);
+
+  const cancelOrder = async (id: string) => {
+    try {
+      await api.del(`/api/account/orders/${id}`);
+      loadOrders();
+    } catch {
+      /* ignore */
+    }
+  };
 
   const price = ticker?.price ?? klines.at(-1)?.close ?? 0;
 
@@ -55,16 +84,26 @@ function TradingTerminal() {
       setMsg('Enter a valid amount.');
       return;
     }
+    const limit = orderType === 'LIMIT' ? parseFloat(limitPrice) : price;
+    if (orderType === 'LIMIT' && (!limit || limit <= 0)) {
+      setMsg('Enter a valid limit price.');
+      return;
+    }
     try {
       await api.post('/api/account/orders', {
         symbol,
         side,
-        type: 'MARKET',
-        price,
+        type: orderType,
+        price: limit,
         amount: amt,
       });
-      setMsg(`✓ Simulated ${side} order for ${amt} ${assetName(symbol)} filled at $${price.toLocaleString()}`);
+      setMsg(
+        orderType === 'MARKET'
+          ? `✓ Simulated ${side} order for ${amt} ${assetName(symbol)} filled at $${price.toLocaleString()}`
+          : `✓ ${side} limit order placed for ${amt} ${assetName(symbol)} @ $${limit.toLocaleString()}`,
+      );
       setAmount('');
+      loadOrders();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Order failed');
     }
@@ -93,7 +132,7 @@ function TradingTerminal() {
         <span className="ml-auto badge bg-brand-gold/10 text-brand-gold">Simulated execution</span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_240px_300px]">
         {/* Chart */}
         <div className="card p-4">
           <div className="h-[420px] w-full">
@@ -122,6 +161,9 @@ function TradingTerminal() {
           </div>
         </div>
 
+        {/* Order book */}
+        <OrderBook price={price} />
+
         {/* Order ticket */}
         <div className="card p-5">
           <div className="mb-4 grid grid-cols-2 gap-2">
@@ -140,7 +182,30 @@ function TradingTerminal() {
           </div>
 
           <label className="label">Order type</label>
-          <div className="input mb-4 cursor-not-allowed opacity-70">Market</div>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            {(['MARKET', 'LIMIT'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setOrderType(t)}
+                className={cn('rounded-xl py-2 text-xs font-semibold transition', orderType === t ? 'bg-brand-blue text-white' : 'bg-white/5 text-slate-400')}
+              >
+                {t.charAt(0) + t.slice(1).toLowerCase()}
+              </button>
+            ))}
+          </div>
+
+          {orderType === 'LIMIT' && (
+            <>
+              <label className="label">Limit price (USDT)</label>
+              <input
+                value={limitPrice}
+                onChange={(e) => setLimitPrice(e.target.value)}
+                type="number"
+                placeholder={price ? price.toFixed(2) : '0.00'}
+                className="input mb-3"
+              />
+            </>
+          )}
 
           <label className="label">Amount ({assetName(symbol)})</label>
           <input
@@ -151,7 +216,7 @@ function TradingTerminal() {
             className="input mb-2"
           />
           <div className="mb-4 text-xs text-slate-500">
-            ≈ ${((parseFloat(amount) || 0) * price).toLocaleString()} USDT
+            ≈ ${((parseFloat(amount) || 0) * (orderType === 'LIMIT' ? parseFloat(limitPrice) || price : price)).toLocaleString()} USDT
           </div>
 
           <button
@@ -169,6 +234,49 @@ function TradingTerminal() {
           )}
         </div>
       </div>
+
+      {/* Open orders */}
+      {user && (
+        <div className="card mt-4 p-0">
+          <div className="border-b border-white/10 px-5 py-3 text-sm font-semibold text-white">Open Orders</div>
+          {openOrders.filter((o) => o.status === 'OPEN').length === 0 ? (
+            <p className="px-5 py-6 text-sm text-slate-500">No open orders.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-2">Pair</th>
+                    <th className="px-5 py-2">Side</th>
+                    <th className="px-5 py-2">Type</th>
+                    <th className="px-5 py-2 text-right">Price</th>
+                    <th className="px-5 py-2 text-right">Amount</th>
+                    <th className="px-5 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {openOrders
+                    .filter((o) => o.status === 'OPEN')
+                    .map((o) => (
+                      <tr key={o.id}>
+                        <td className="px-5 py-2.5 font-medium text-white">{o.symbol}</td>
+                        <td className={cn('px-5 py-2.5', o.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{o.side}</td>
+                        <td className="px-5 py-2.5 text-slate-400">{o.type}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">${parseFloat(o.price).toLocaleString()}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">{parseFloat(o.amount)}</td>
+                        <td className="px-5 py-2.5 text-right">
+                          <button onClick={() => cancelOrder(o.id)} className="rounded-lg bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/25">
+                            Cancel
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
       <div className="h-16" />
     </section>
   );
