@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+jobs:
+  api:
+    name: API build & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install API deps
+        working-directory: apps/api
+        run: npm install
+      - name: Generate Prisma client
+        working-directory: apps/api
+        run: npx prisma generate
+      - name: Typecheck API
+        working-directory: apps/api
+        run: npx tsc -p tsconfig.json --noEmit
+
+  web:
+    name: Web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install web deps
+        working-directory: apps/web
+        run: npm install
+      - name: Build web
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: https://nextradepro-api.onrender.com
+        run: npm run build

@@ -1,0 +1,223 @@
+// NexTradePro (NXP) — Prisma schema
+// Postgres (Neon). RBAC with granular admin roles is the core of this schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Authentication & Users
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  passwordHash  String
+  fullName      String
+  avatarUrl     String?
+  status        UserStatus @default(ACTIVE)
+  kycStatus     KycStatus  @default(NONE)
+  twoFactor     Boolean    @default(false)
+  demoMode      Boolean    @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  roles         UserRole[]
+  wallets       Wallet[]
+  orders        Order[]
+  transactions  Transaction[]
+  auditLogs     AuditLog[]      @relation("ActorLogs")
+  assignedRoles UserRole[]      @relation("AssignedBy")
+
+  @@index([email])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// RBAC: Roles + Permissions (many-to-many) + per-user role assignment
+// Admin "types" (Withdrawal-Approval Admin, General Admin, KYC Admin, ...) are
+// modelled as roles that bundle a set of permissions. A Super Admin assigns
+// these roles to any registered user.
+// ---------------------------------------------------------------------------
+
+model Role {
+  id          String           @id @default(cuid())
+  key         String           @unique // e.g. SUPER_ADMIN, WITHDRAWAL_ADMIN
+  name        String                   // "Withdrawal Approval Admin"
+  description String?
+  isSystem    Boolean          @default(false) // system roles cannot be deleted
+  isAdmin     Boolean          @default(false) // grants access to the admin panel
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@index([key])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique // e.g. withdrawals.approve, users.manage
+  name        String
+  group       String                   // "Withdrawals", "Users", "KYC", ...
+  description String?
+  createdAt   DateTime         @default(now())
+
+  roles       RolePermission[]
+
+  @@index([group])
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model UserRole {
+  id           String   @id @default(cuid())
+  userId       String
+  roleId       String
+  assignedById String?
+  assignedAt   DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy   User?    @relation("AssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+// ---------------------------------------------------------------------------
+// Trading domain (demo / simulated execution on live prices)
+// ---------------------------------------------------------------------------
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String
+  asset     String   // BTC, ETH, USDT ...
+  balance   Decimal  @default(0) @db.Decimal(24, 8)
+  locked    Decimal  @default(0) @db.Decimal(24, 8)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, asset])
+  @@index([userId])
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+  STOP
+}
+
+enum OrderStatus {
+  OPEN
+  FILLED
+  CANCELLED
+  REJECTED
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  userId    String
+  symbol    String      // BTCUSDT
+  side      OrderSide
+  type      OrderType
+  price     Decimal     @db.Decimal(24, 8)
+  amount    Decimal     @db.Decimal(24, 8)
+  filled    Decimal     @default(0) @db.Decimal(24, 8)
+  status    OrderStatus @default(OPEN)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([symbol])
+}
+
+enum TxType {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER
+}
+
+enum TxStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  userId      String
+  type        TxType
+  asset       String
+  amount      Decimal  @db.Decimal(24, 8)
+  status      TxStatus @default(PENDING)
+  reference   String?
+  reviewedById String?
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+}
+
+// ---------------------------------------------------------------------------
+// Audit logging — every admin action is recorded
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String   // role.assign, withdrawal.approve, user.suspend ...
+  target    String?  // affected entity id
+  meta      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  actor     User?    @relation("ActorLogs", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([action])
+}
