@@ -31,16 +31,15 @@ NexTradePro deploys as two services: the **Next.js frontend on Vercel** and the
 
 ### Option B — Manual Web Service
 - **Root Directory:** `apps/api`
-- **Build Command:** `npm install && npm run build`
-- **Start Command:** `npm run prisma:migrate && npm run start`
+- **Build Command:** `npm install --include=dev && npm run build`
+- **Start Command:** `npx prisma db push && (npm run seed || echo seed-skipped) && npm run start`
 - **Health Check Path:** `/health`
 - Add the env vars listed above plus `NODE_ENV=production`.
 
-### Seeding production (one-time)
-From the Render shell (or locally pointed at the prod DB):
-```bash
-cd apps/api && npm run seed
-```
+> `--include=dev` is required: `NODE_ENV=production` otherwise makes npm skip the
+> devDependencies (prisma, typescript, tsx) that the build and seed need.
+> `prisma db push` creates the schema directly (no migration files); the seed is
+> idempotent, so it's safe to run on every boot.
 
 ---
 

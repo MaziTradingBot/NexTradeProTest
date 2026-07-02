@@ -6,8 +6,12 @@ services:
     runtime: node
     plan: free
     rootDir: apps/api
-    buildCommand: npm install && npm run build
-    startCommand: npm run prisma:migrate && npm run start
+    # --include=dev is required because NODE_ENV=production makes npm skip
+    # devDependencies (prisma, typescript, tsx) that the build/seed need.
+    buildCommand: npm install --include=dev && npm run build
+    # On boot: sync schema (no migration files needed) + seed roles/permissions/
+    # demo data (idempotent). Seed failure is tolerated so the API still starts.
+    startCommand: npx prisma db push && (npm run seed || echo seed-skipped) && npm run start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV

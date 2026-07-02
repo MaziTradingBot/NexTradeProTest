@@ -6,7 +6,7 @@ WORKDIR /app
 # Install dependencies (includes prisma generate via postinstall)
 COPY package.json ./
 COPY prisma ./prisma
-RUN npm install
+RUN npm install --include=dev
 
 # Build
 COPY tsconfig.json ./
@@ -15,4 +15,5 @@ RUN npm run build
 
 ENV NODE_ENV=production
 EXPOSE 4000
-CMD ["sh", "-c", "npm run prisma:migrate && node dist/server.js"]
+# Sync schema + seed (idempotent) on boot, then start the API.
+CMD ["sh", "-c", "npx prisma db push && (npm run seed || echo seed-skipped) && node dist/server.js"]
