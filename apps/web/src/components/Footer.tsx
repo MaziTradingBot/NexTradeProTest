@@ -7,7 +7,7 @@ const COLUMNS = [
     links: [
       { href: '/markets', label: 'Markets' },
       { href: '/trading', label: 'Spot Trading' },
-      { href: '/trading', label: 'Futures' },
+      { href: '/ai', label: 'AI Assistant' },
       { href: '/copy-trading', label: 'Copy Trading' },
     ],
   },
@@ -25,7 +25,7 @@ const COLUMNS = [
     links: [
       { href: '/news', label: 'News' },
       { href: '/tools', label: 'Calculators' },
-      { href: '/about', label: 'Academy' },
+      { href: '/calendar', label: 'Economic Calendar' },
       { href: '/about', label: 'Support' },
     ],
   },

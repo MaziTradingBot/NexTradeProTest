@@ -36,6 +36,41 @@ router.get('/overview', requirePermission('admin.access'), async (_req, res) => 
   });
 });
 
+// Analytics time series (signups + revenue) for the last N days.
+router.get('/analytics', requirePermission('admin.analytics.view'), async (req, res) => {
+  const days = Math.min(parseInt((req.query.days as string) || '14', 10), 60);
+  const since = new Date();
+  since.setDate(since.getDate() - (days - 1));
+  since.setHours(0, 0, 0, 0);
+
+  const [users, deposits] = await Promise.all([
+    prisma.user.findMany({ where: { createdAt: { gte: since } }, select: { createdAt: true } }),
+    prisma.transaction.findMany({
+      where: { type: 'DEPOSIT', status: { in: ['COMPLETED', 'APPROVED'] }, createdAt: { gte: since } },
+      select: { createdAt: true, amount: true, asset: true },
+    }),
+  ]);
+
+  const key = (d: Date) => d.toISOString().slice(0, 10);
+  const buckets = new Map<string, { date: string; signups: number; revenue: number }>();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(since);
+    d.setDate(since.getDate() + i);
+    buckets.set(key(d), { date: key(d), signups: 0, revenue: 0 });
+  }
+  users.forEach((u) => {
+    const b = buckets.get(key(u.createdAt));
+    if (b) b.signups += 1;
+  });
+  deposits.forEach((t) => {
+    const b = buckets.get(key(t.createdAt));
+    // Value USDT 1:1; other assets are ignored for this simple revenue proxy.
+    if (b && t.asset === 'USDT') b.revenue += Number(t.amount);
+  });
+
+  res.json({ series: Array.from(buckets.values()) });
+});
+
 // ---------------------------------------------------------------------------
 // Roles & permissions
 // ---------------------------------------------------------------------------

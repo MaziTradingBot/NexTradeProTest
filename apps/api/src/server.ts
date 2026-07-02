@@ -67,6 +67,17 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// Safety net: a single rejected promise or thrown async error should be logged,
+// not crash the whole API process.
+process.on('unhandledRejection', (reason) => {
+  // eslint-disable-next-line no-console
+  console.error('Unhandled rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('Uncaught exception:', err);
+});
+
 app.listen(env.port, () => {
   // eslint-disable-next-line no-console
   console.log(`🚀 NexTradePro API listening on :${env.port} (${env.nodeEnv})`);
