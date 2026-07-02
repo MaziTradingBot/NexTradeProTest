@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { SupportButton } from '@/components/SupportButton';
+import { WelcomeTour } from '@/components/WelcomeTour';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://nextradepro.vercel.app'),
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </div>
         {children}
         <SupportButton />
+        <WelcomeTour />
       </body>
     </html>
   );

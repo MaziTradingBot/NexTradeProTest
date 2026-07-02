@@ -24,9 +24,9 @@ const COLUMNS = [
     title: 'Resources',
     links: [
       { href: '/news', label: 'News' },
+      { href: '/academy', label: 'Academy' },
       { href: '/tools', label: 'Calculators' },
       { href: '/calendar', label: 'Economic Calendar' },
-      { href: '/about', label: 'Support' },
     ],
   },
   {

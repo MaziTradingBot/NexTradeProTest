@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { Navbar } from '@/components/Navbar';
 import { OrderBook } from '@/components/OrderBook';
+import { RecentTrades } from '@/components/RecentTrades';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useTickers, assetName } from '@/lib/useTickers';
@@ -165,8 +166,11 @@ function TradingTerminal() {
           </div>
         </div>
 
-        {/* Order book */}
-        <OrderBook price={price} />
+        {/* Order book + recent trades */}
+        <div className="space-y-4">
+          <OrderBook price={price} symbol={symbol} />
+          <RecentTrades price={price} symbol={symbol} />
+        </div>
 
         {/* Order ticket */}
         <div className="card p-5">

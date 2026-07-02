@@ -1,42 +1,47 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useOrderBook, type DepthLevel } from '@/lib/useOrderBook';
 import { cn } from '@/lib/utils';
 
-// A lightweight simulated order book derived from the live mid price.
-// (Real depth would come from a WebSocket feed; this keeps the demo self-contained.)
-export function OrderBook({ price }: { price: number }) {
+// Simulated fallback derived from the mid price when the live socket is down.
+function useSimBook(price: number, live: boolean) {
   const [seed, setSeed] = useState(0);
   useEffect(() => {
+    if (live) return;
     const id = setInterval(() => setSeed((s) => s + 1), 1500);
     return () => clearInterval(id);
-  }, []);
+  }, [live]);
 
-  const { asks, bids, spread } = useMemo(() => {
-    if (!price) return { asks: [], bids: [], spread: 0 };
-    const rng = (n: number) => ((Math.sin(seed * 13.7 + n * 7.3) + 1) / 2);
+  return useMemo(() => {
+    if (!price) return { asks: [] as DepthLevel[], bids: [] as DepthLevel[] };
+    const rng = (n: number) => (Math.sin(seed * 13.7 + n * 7.3) + 1) / 2;
     const step = price * 0.0004;
     const rows = (dir: 1 | -1) =>
-      Array.from({ length: 9 }).map((_, i) => {
-        const p = price + dir * step * (i + 1);
-        const size = +(0.05 + rng(i + (dir === 1 ? 0 : 50)) * 2.4).toFixed(3);
-        return { price: p, size, total: +(p * size).toFixed(0) };
-      });
-    const a = rows(1).reverse();
-    const b = rows(-1);
-    return { asks: a, bids: b, spread: a.length ? a[a.length - 1].price - b[0].price : 0 };
+      Array.from({ length: 10 }).map((_, i) => ({
+        price: price + dir * step * (i + 1),
+        size: +(0.05 + rng(i + (dir === 1 ? 0 : 50)) * 2.4).toFixed(3),
+      }));
+    return { asks: rows(1), bids: rows(-1) };
   }, [price, seed]);
+}
 
+export function OrderBook({ price, symbol }: { price: number; symbol: string }) {
+  const { bids: liveBids, asks: liveAsks, live } = useOrderBook(symbol);
+  const sim = useSimBook(price, live);
+
+  const asks = (live && liveAsks.length ? [...liveAsks] : sim.asks).slice(0, 10).reverse();
+  const bids = (live && liveBids.length ? liveBids : sim.bids).slice(0, 10);
+  const spread = asks.length && bids.length ? asks[asks.length - 1].price - bids[0].price : 0;
   const max = Math.max(...[...asks, ...bids].map((r) => r.size), 1);
-  const Row = ({ r, side }: { r: { price: number; size: number }; side: 'ask' | 'bid' }) => (
+
+  const Row = ({ r, side }: { r: DepthLevel; side: 'ask' | 'bid' }) => (
     <div className="relative grid grid-cols-3 px-3 py-0.5 font-mono text-xs">
       <div
         className={cn('absolute inset-y-0 right-0', side === 'ask' ? 'bg-red-500/10' : 'bg-brand-emerald/10')}
         style={{ width: `${(r.size / max) * 100}%` }}
       />
-      <span className={cn('relative z-10', side === 'ask' ? 'text-red-400' : 'text-brand-emerald')}>
-        {r.price.toFixed(2)}
-      </span>
+      <span className={cn('relative z-10', side === 'ask' ? 'text-red-400' : 'text-brand-emerald')}>{r.price.toFixed(2)}</span>
       <span className="relative z-10 text-right text-slate-300">{r.size.toFixed(3)}</span>
       <span className="relative z-10 text-right text-slate-500">{(r.price * r.size).toFixed(0)}</span>
     </div>
@@ -44,7 +49,13 @@ export function OrderBook({ price }: { price: number }) {
 
   return (
     <div className="card p-0">
-      <div className="border-b border-white/10 px-4 py-3 text-sm font-semibold text-white">Order Book</div>
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <span className="text-sm font-semibold text-white">Order Book</span>
+        <span className="flex items-center gap-1 text-[10px] font-semibold">
+          <span className={cn('h-1.5 w-1.5 rounded-full', live ? 'animate-pulse-glow bg-brand-emerald' : 'bg-slate-500')} />
+          <span className={live ? 'text-brand-emerald' : 'text-slate-500'}>{live ? 'LIVE' : 'SIM'}</span>
+        </span>
+      </div>
       <div className="grid grid-cols-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500">
         <span>Price</span>
         <span className="text-right">Size</span>
