@@ -42,6 +42,8 @@ function TradingTerminal() {
   const ticker = tickers.find((t) => t.symbol === symbol);
 
   const [klines, setKlines] = useState<Kline[]>([]);
+  const [market, setMarket] = useState<'SPOT' | 'FUTURES'>('SPOT');
+  const [leverage, setLeverage] = useState(10);
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [amount, setAmount] = useState('');
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
@@ -97,10 +99,12 @@ function TradingTerminal() {
         price: limit,
         amount: amt,
       });
+      const lev = market === 'FUTURES' ? ` at ${leverage}x` : '';
+      const dir = market === 'FUTURES' ? (side === 'BUY' ? 'LONG' : 'SHORT') : side;
       setMsg(
         orderType === 'MARKET'
-          ? `✓ Simulated ${side} order for ${amt} ${assetName(symbol)} filled at $${price.toLocaleString()}`
-          : `✓ ${side} limit order placed for ${amt} ${assetName(symbol)} @ $${limit.toLocaleString()}`,
+          ? `✓ Simulated ${dir} order for ${amt} ${assetName(symbol)}${lev} filled at $${price.toLocaleString()}`
+          : `✓ ${dir} limit order placed for ${amt} ${assetName(symbol)}${lev} @ $${limit.toLocaleString()}`,
       );
       setAmount('');
       loadOrders();
@@ -166,18 +170,56 @@ function TradingTerminal() {
 
         {/* Order ticket */}
         <div className="card p-5">
+          {/* Spot / Futures */}
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-black/20 p-1">
+            {(['SPOT', 'FUTURES'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMarket(m)}
+                className={cn('rounded-lg py-1.5 text-xs font-semibold transition', market === m ? 'bg-white/10 text-white' : 'text-slate-400')}
+              >
+                {m.charAt(0) + m.slice(1).toLowerCase()}
+              </button>
+            ))}
+          </div>
+
+          {/* Leverage (futures only) */}
+          {market === 'FUTURES' && (
+            <div className="mb-4">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="label mb-0">Leverage</span>
+                <span className="font-mono text-sm font-semibold text-brand-gold">{leverage}x</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={125}
+                value={leverage}
+                onChange={(e) => setLeverage(parseInt(e.target.value, 10))}
+                className="w-full accent-brand-gold"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+                {[1, 25, 50, 75, 100, 125].map((l) => (
+                  <button key={l} onClick={() => setLeverage(l)} className="hover:text-white">
+                    {l}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mb-4 grid grid-cols-2 gap-2">
             <button
               onClick={() => setSide('BUY')}
               className={cn('rounded-xl py-2.5 text-sm font-semibold transition', side === 'BUY' ? 'bg-brand-emerald text-white' : 'bg-white/5 text-slate-400')}
             >
-              Buy
+              {market === 'FUTURES' ? 'Long' : 'Buy'}
             </button>
             <button
               onClick={() => setSide('SELL')}
               className={cn('rounded-xl py-2.5 text-sm font-semibold transition', side === 'SELL' ? 'bg-red-500 text-white' : 'bg-white/5 text-slate-400')}
             >
-              Sell
+              {market === 'FUTURES' ? 'Short' : 'Sell'}
             </button>
           </div>
 
@@ -219,11 +261,29 @@ function TradingTerminal() {
             ≈ ${((parseFloat(amount) || 0) * (orderType === 'LIMIT' ? parseFloat(limitPrice) || price : price)).toLocaleString()} USDT
           </div>
 
+          {market === 'FUTURES' && (() => {
+            const notional = (parseFloat(amount) || 0) * price;
+            const margin = notional / leverage;
+            const liq = side === 'BUY' ? price * (1 - 1 / leverage) : price * (1 + 1 / leverage);
+            return (
+              <div className="mb-4 space-y-1 rounded-xl bg-white/5 p-3 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Margin required</span>
+                  <span className="font-mono text-white">${margin.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Est. liquidation</span>
+                  <span className="font-mono text-red-400">${liq.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+            );
+          })()}
+
           <button
             onClick={placeOrder}
             className={cn('w-full rounded-xl py-3 text-sm font-semibold text-white transition', side === 'BUY' ? 'bg-brand-emerald hover:brightness-110' : 'bg-red-500 hover:brightness-110')}
           >
-            {side === 'BUY' ? 'Buy' : 'Sell'} {assetName(symbol)}
+            {market === 'FUTURES' ? `${side === 'BUY' ? 'Long' : 'Short'} ${leverage}x` : side === 'BUY' ? 'Buy' : 'Sell'} {assetName(symbol)}
           </button>
 
           {msg && <p className="mt-3 text-center text-xs text-slate-300">{msg}</p>}

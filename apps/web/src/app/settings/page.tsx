@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Copy, KeyRound, ShieldCheck, Trash2, User } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
+import { QrCode } from '@/components/QrCode';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 
@@ -19,6 +20,9 @@ function SettingsInner() {
   const { user, loadMe } = useAuth();
   const [fullName, setFullName] = useState(user?.fullName ?? '');
   const [twoFactor, setTwoFactor] = useState(false);
+  const [setup, setSetup] = useState<{ secret: string; otpauth: string } | null>(null);
+  const [code, setCode] = useState('');
+  const [twoFaError, setTwoFaError] = useState<string | null>(null);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [newLabel, setNewLabel] = useState('');
   const [newSecret, setNewSecret] = useState<string | null>(null);
@@ -31,6 +35,7 @@ function SettingsInner() {
 
   useEffect(() => {
     setFullName(user?.fullName ?? '');
+    setTwoFactor(!!user?.twoFactor);
     api.get<ApiKeyRow[]>('/api/account/apikeys').then(setKeys).catch(() => {});
   }, [user]);
 
@@ -40,12 +45,35 @@ function SettingsInner() {
     flash('Profile updated');
   };
 
-  const toggle2fa = async () => {
-    const next = !twoFactor;
-    setTwoFactor(next);
-    await api.post('/api/account/2fa', { enabled: next });
-    flash(next ? '2FA enabled' : '2FA disabled');
+  const startSetup = async () => {
+    setTwoFaError(null);
+    const res = await api.post<{ secret: string; otpauth: string }>('/api/account/2fa/setup');
+    setSetup(res);
   };
+
+  const verify2fa = async () => {
+    setTwoFaError(null);
+    try {
+      await api.post('/api/account/2fa/verify', { code });
+      setTwoFactor(true);
+      setSetup(null);
+      setCode('');
+      await loadMe();
+      flash('Two-factor authentication enabled');
+    } catch (e) {
+      setTwoFaError(e instanceof Error ? e.message : 'Invalid code');
+    }
+  };
+
+  const disable2fa = async () => {
+    await api.post('/api/account/2fa/disable');
+    setTwoFactor(false);
+    await loadMe();
+    flash('Two-factor authentication disabled');
+  };
+
+  // Format the base32 secret in groups of 4 for easy manual entry.
+  const groupedSecret = setup ? setup.secret.replace(/(.{4})/g, '$1 ').trim() : '';
 
   const createKey = async () => {
     if (!newLabel.trim()) return;
@@ -91,21 +119,69 @@ function SettingsInner() {
       <div className="card mt-6">
         <div className="mb-4 flex items-center gap-2">
           <ShieldCheck size={18} className="text-brand-emerald" />
-          <h2 className="font-semibold text-white">Security</h2>
+          <h2 className="font-semibold text-white">Two-Factor Authentication</h2>
+          {twoFactor && <span className="badge ml-auto bg-brand-emerald/15 text-brand-emerald">Enabled</span>}
         </div>
-        <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
-          <div>
-            <div className="text-sm font-medium text-white">Two-factor authentication</div>
-            <div className="text-xs text-slate-400">Add an extra layer of security (demo toggle).</div>
+
+        {twoFactor ? (
+          <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
+            <div className="text-sm text-slate-300">Your account is protected with an authenticator app.</div>
+            <button onClick={disable2fa} className="btn-ghost px-3 py-1.5 text-xs">
+              Disable
+            </button>
           </div>
-          <button
-            onClick={toggle2fa}
-            className={`relative h-6 w-11 rounded-full transition ${twoFactor ? 'bg-brand-emerald' : 'bg-white/15'}`}
-            aria-pressed={twoFactor}
-          >
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${twoFactor ? 'left-[22px]' : 'left-0.5'}`} />
-          </button>
-        </div>
+        ) : setup ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Scan the QR code with Google Authenticator, Authy or 1Password — or add the key manually — then enter the 6-digit code to confirm.
+            </p>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <QrCode text={setup.otpauth} />
+              <div className="flex-1">
+                <div className="text-xs text-slate-500">Manual entry key</div>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="rounded-lg bg-black/30 px-3 py-2 font-mono text-sm tracking-wider text-white">{groupedSecret}</code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(setup.secret);
+                      flash('Key copied');
+                    }}
+                    className="rounded-lg bg-white/10 p-2 text-white hover:bg-white/20"
+                    aria-label="Copy key"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+                <div className="mt-4">
+                  <label className="label">Verification code</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      inputMode="numeric"
+                      placeholder="123456"
+                      className="input font-mono tracking-[0.3em]"
+                    />
+                    <button onClick={verify2fa} disabled={code.length !== 6} className="btn-primary whitespace-nowrap">
+                      Verify
+                    </button>
+                  </div>
+                  {twoFaError && <p className="mt-2 text-sm text-red-400">{twoFaError}</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-white">Authenticator app (TOTP)</div>
+              <div className="text-xs text-slate-400">Protect your account with time-based one-time codes.</div>
+            </div>
+            <button onClick={startSetup} className="btn-primary px-4 py-2 text-sm">
+              Enable
+            </button>
+          </div>
+        )}
       </div>
 
       {/* API keys */}

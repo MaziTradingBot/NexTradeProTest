@@ -11,6 +11,8 @@ export interface AuthUser {
   permissions: string[];
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  kycStatus?: string;
+  twoFactor?: boolean;
 }
 
 interface AuthState {

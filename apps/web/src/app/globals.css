@@ -21,6 +21,55 @@ body {
   background-attachment: fixed;
 }
 
+/* ── Light theme ─────────────────────────────────────────────────────────
+   The UI is dark-first; light mode remaps surfaces, borders and the common
+   text utilities so the whole app stays readable without per-page edits. */
+html.light body {
+  background-color: #f6f8fc;
+  color: #1e293b;
+  background-image: radial-gradient(60% 50% at 50% 0%, rgba(11, 110, 255, 0.08), transparent 60%);
+}
+html.light .card {
+  background-color: #ffffff;
+  border-color: rgba(2, 6, 23, 0.08);
+  box-shadow: 0 8px 30px -18px rgba(2, 6, 23, 0.25);
+}
+html.light .glass {
+  background-color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(2, 6, 23, 0.08);
+}
+html.light .input {
+  background-color: #ffffff;
+  border-color: rgba(2, 6, 23, 0.12);
+  color: #0f172a;
+}
+html.light .btn-ghost {
+  background-color: rgba(2, 6, 23, 0.04);
+  border-color: rgba(2, 6, 23, 0.1);
+  color: #1e293b;
+}
+/* Text utility remaps */
+html.light .text-white { color: #0d1117 !important; }
+html.light .text-slate-200 { color: #1e293b !important; }
+html.light .text-slate-300 { color: #334155 !important; }
+html.light .text-slate-400 { color: #556377 !important; }
+html.light .text-slate-500 { color: #64748b !important; }
+/* Surface / border utility remaps */
+html.light .bg-bg-surface\/40,
+html.light .bg-bg-surface\/50,
+html.light .bg-bg-surface\/60,
+html.light .bg-bg-surface\/80,
+html.light .bg-bg-surface { background-color: #ffffff !important; }
+html.light .bg-bg-elevated,
+html.light .bg-bg-elevated\/60 { background-color: #f1f5f9 !important; }
+html.light .bg-white\/5 { background-color: rgba(2, 6, 23, 0.04) !important; }
+html.light .bg-white\/10 { background-color: rgba(2, 6, 23, 0.06) !important; }
+html.light .border-white\/10 { border-color: rgba(2, 6, 23, 0.1) !important; }
+html.light .border-white\/5 { border-color: rgba(2, 6, 23, 0.06) !important; }
+html.light .divide-white\/5 > * { border-color: rgba(2, 6, 23, 0.06) !important; }
+/* Theme-toggle button + mobile menu chrome in light mode */
+html.light .bg-black\/20 { background-color: rgba(2, 6, 23, 0.05) !important; }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -131,6 +131,10 @@ router.post('/logout', (req, res) => {
 // GET /api/auth/me
 router.get('/me', authenticate, async (req, res) => {
   const u = req.user!;
+  const profile = await prisma.user.findUnique({
+    where: { id: u.id },
+    select: { kycStatus: true, twoFactor: true },
+  });
   return res.json({
     id: u.id,
     email: u.email,
@@ -139,6 +143,8 @@ router.get('/me', authenticate, async (req, res) => {
     permissions: Array.from(u.permissions),
     isSuperAdmin: u.isSuperAdmin,
     isAdmin: u.isSuperAdmin || u.roles.some((r) => r.isAdmin),
+    kycStatus: profile?.kycStatus ?? 'NONE',
+    twoFactor: profile?.twoFactor ?? false,
   });
 });
 

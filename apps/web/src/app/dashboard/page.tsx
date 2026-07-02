@@ -85,6 +85,9 @@ function DashboardInner() {
           <Link href="/portfolio" className="btn-ghost">
             Portfolio
           </Link>
+          <Link href="/kyc" className="btn-ghost">
+            Verify (KYC)
+          </Link>
           <Link href="/settings" className="btn-ghost">
             Settings
           </Link>

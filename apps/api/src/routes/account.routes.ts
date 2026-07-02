@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
 import { audit } from '../lib/audit';
+import { generateBase32Secret, otpauthUri, verifyTotp } from '../lib/totp';
 
 const router = Router();
 router.use(authenticate);
@@ -123,14 +124,70 @@ router.patch('/profile', async (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/account/2fa — toggle two-factor (demo)
-router.post('/2fa', async (req, res) => {
-  const schema = z.object({ enabled: z.boolean() });
+// GET /api/account/2fa — current status
+router.get('/2fa', async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { twoFactor: true } });
+  res.json({ twoFactor: user?.twoFactor ?? false });
+});
+
+// POST /api/account/2fa/setup — generate a TOTP secret + otpauth URI (real TOTP)
+router.post('/2fa/setup', async (req, res) => {
+  const secret = generateBase32Secret();
+  await prisma.user.update({ where: { id: req.user!.id }, data: { twoFactorSecret: secret } });
+  res.json({ secret, otpauth: otpauthUri(secret, req.user!.email) });
+});
+
+// POST /api/account/2fa/verify — confirm a code and enable 2FA
+router.post('/2fa/verify', async (req, res) => {
+  const schema = z.object({ code: z.string().length(6) });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid value' });
-  await prisma.user.update({ where: { id: req.user!.id }, data: { twoFactor: parsed.data.enabled } });
-  await audit({ actorId: req.user!.id, action: parsed.data.enabled ? '2fa.enable' : '2fa.disable', ip: req.ip });
-  res.json({ ok: true, twoFactor: parsed.data.enabled });
+  if (!parsed.success) return res.status(400).json({ error: 'Enter the 6-digit code' });
+
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { twoFactorSecret: true } });
+  if (!user?.twoFactorSecret) return res.status(400).json({ error: 'Start setup first' });
+  if (!verifyTotp(user.twoFactorSecret, parsed.data.code)) {
+    return res.status(400).json({ error: 'Invalid code — try again' });
+  }
+  await prisma.user.update({ where: { id: req.user!.id }, data: { twoFactor: true } });
+  await audit({ actorId: req.user!.id, action: '2fa.enable', ip: req.ip });
+  res.json({ ok: true, twoFactor: true });
+});
+
+// POST /api/account/2fa/disable
+router.post('/2fa/disable', async (req, res) => {
+  await prisma.user.update({ where: { id: req.user!.id }, data: { twoFactor: false, twoFactorSecret: null } });
+  await audit({ actorId: req.user!.id, action: '2fa.disable', ip: req.ip });
+  res.json({ ok: true, twoFactor: false });
+});
+
+// ---------------------------------------------------------------------------
+// KYC — user submission flow
+// ---------------------------------------------------------------------------
+router.get('/kyc', async (req, res) => {
+  const [user, submission] = await Promise.all([
+    prisma.user.findUnique({ where: { id: req.user!.id }, select: { kycStatus: true } }),
+    prisma.kycSubmission.findFirst({ where: { userId: req.user!.id }, orderBy: { createdAt: 'desc' } }),
+  ]);
+  res.json({ status: user?.kycStatus ?? 'NONE', submission });
+});
+
+router.post('/kyc', async (req, res) => {
+  const schema = z.object({
+    fullName: z.string().min(2),
+    country: z.string().min(2),
+    idType: z.enum(['PASSPORT', 'NATIONAL_ID', 'DRIVERS_LICENSE']),
+    idNumber: z.string().min(3),
+    dob: z.string().min(4),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+  await prisma.$transaction([
+    prisma.kycSubmission.create({ data: { userId: req.user!.id, ...parsed.data, status: 'PENDING' } }),
+    prisma.user.update({ where: { id: req.user!.id }, data: { kycStatus: 'PENDING' } }),
+  ]);
+  await audit({ actorId: req.user!.id, action: 'kyc.submit', target: req.user!.id, ip: req.ip });
+  res.status(201).json({ ok: true, status: 'PENDING' });
 });
 
 // ---------------------------------------------------------------------------

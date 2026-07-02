@@ -33,9 +33,10 @@ model User {
   passwordHash  String
   fullName      String
   avatarUrl     String?
-  status        UserStatus @default(ACTIVE)
-  kycStatus     KycStatus  @default(NONE)
-  twoFactor     Boolean    @default(false)
+  status          UserStatus @default(ACTIVE)
+  kycStatus       KycStatus  @default(NONE)
+  twoFactor       Boolean    @default(false)
+  twoFactorSecret String?
   demoMode      Boolean    @default(true)
   lastLoginAt   DateTime?
   createdAt     DateTime   @default(now())
@@ -46,6 +47,7 @@ model User {
   orders        Order[]
   transactions  Transaction[]
   apiKeys       ApiKey[]
+  kycSubmissions KycSubmission[]
   auditLogs     AuditLog[]      @relation("ActorLogs")
   assignedRoles UserRole[]      @relation("AssignedBy")
 
@@ -202,6 +204,23 @@ model Transaction {
   @@index([userId])
   @@index([status])
   @@index([type])
+}
+
+model KycSubmission {
+  id        String    @id @default(cuid())
+  userId    String
+  fullName  String
+  country   String
+  idType    String // PASSPORT, NATIONAL_ID, DRIVERS_LICENSE
+  idNumber  String
+  dob       String
+  status    KycStatus @default(PENDING)
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
 }
 
 model ApiKey {
