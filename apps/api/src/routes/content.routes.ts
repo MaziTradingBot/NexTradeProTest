@@ -23,4 +23,16 @@ router.get('/announcements', async (req, res) => {
   }
 });
 
+// GET /api/content/flags — public feature-flag map (safe subset)
+router.get('/flags', async (_req, res) => {
+  try {
+    const flags = await prisma.featureFlag.findMany({ select: { key: true, enabled: true } });
+    const map: Record<string, boolean> = {};
+    flags.forEach((f) => (map[f.key] = f.enabled));
+    res.json(map);
+  } catch {
+    res.json({});
+  }
+});
+
 export default router;

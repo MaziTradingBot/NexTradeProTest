@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { SupportButton } from '@/components/SupportButton';
 import { WelcomeTour } from '@/components/WelcomeTour';
+import { MaintenanceGate } from '@/components/MaintenanceGate';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://nextradepro.vercel.app'),
@@ -48,7 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <span className="h-2 w-2 animate-pulse-glow rounded-full bg-brand-gold" />
           Demo Mode
         </div>
-        {children}
+        <MaintenanceGate>{children}</MaintenanceGate>
         <SupportButton />
         <WelcomeTour />
       </body>

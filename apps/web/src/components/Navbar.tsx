@@ -6,6 +6,7 @@ import { Menu, X } from 'lucide-react';
 import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationBell } from './NotificationBell';
+import { GlobalSearch } from './GlobalSearch';
 import { useAuth } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
@@ -56,6 +57,7 @@ export function Navbar() {
         </div>
 
         <div className="hidden items-center gap-3 lg:flex">
+          <GlobalSearch />
           <ThemeToggle />
           {user ? (
             <>
