@@ -37,6 +37,8 @@ model User {
   kycStatus       KycStatus  @default(NONE)
   twoFactor       Boolean    @default(false)
   twoFactorSecret String?
+  referralCode    String?    @unique
+  referredById    String?
   demoMode      Boolean    @default(true)
   lastLoginAt   DateTime?
   createdAt     DateTime   @default(now())
@@ -48,6 +50,9 @@ model User {
   transactions  Transaction[]
   apiKeys       ApiKey[]
   kycSubmissions KycSubmission[]
+  notifications Notification[]
+  referrals     User[]          @relation("Referrals")
+  referredBy    User?           @relation("Referrals", fields: [referredById], references: [id])
   auditLogs     AuditLog[]      @relation("ActorLogs")
   assignedRoles UserRole[]      @relation("AssignedBy")
 
@@ -204,6 +209,43 @@ model Transaction {
   @@index([userId])
   @@index([status])
   @@index([type])
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  TRADE
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      NotificationType @default(INFO)
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  description String?
+  enabled     Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+}
+
+model PlatformSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 model KycSubmission {

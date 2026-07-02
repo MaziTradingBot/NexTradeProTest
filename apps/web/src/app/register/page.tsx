@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Logo } from '@/components/Logo';
@@ -12,8 +12,14 @@ export default function RegisterPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [referral, setReferral] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get('ref');
+    if (ref) setReferral(ref);
+  }, []);
 
   const strength = (() => {
     let s = 0;
@@ -29,7 +35,7 @@ export default function RegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      await register(email, password, fullName);
+      await register(email, password, fullName, referral || undefined);
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
@@ -71,6 +77,11 @@ export default function RegisterPage() {
                 </div>
               )}
             </div>
+            {referral && (
+              <p className="rounded-lg bg-brand-emerald/10 px-3 py-2 text-sm text-brand-emerald">
+                🎉 Referred by code <span className="font-mono font-semibold">{referral}</span>
+              </p>
+            )}
             {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>}
             <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? 'Creating account…' : 'Create account'}

@@ -18,7 +18,12 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   fullName: z.string().min(2),
+  referral: z.string().optional(),
 });
+
+function genReferralCode(): string {
+  return `NXP${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -42,19 +47,30 @@ router.post('/register', async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.errors[0].message });
   }
-  const { email, password, fullName } = parsed.data;
+  const { email, password, fullName, referral } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return res.status(409).json({ error: 'Email already registered' });
 
   const userRole = await prisma.role.findUnique({ where: { key: 'USER' } });
+  const referrer = referral
+    ? await prisma.user.findUnique({ where: { referralCode: referral } })
+    : null;
 
   const user = await prisma.user.create({
     data: {
       email,
       passwordHash: await hashPassword(password),
       fullName,
+      referralCode: genReferralCode(),
+      referredById: referrer?.id,
       roles: userRole ? { create: { roleId: userRole.id } } : undefined,
+      notifications: {
+        create: [
+          { title: 'Welcome to NexTradePro 🎉', body: 'Your demo account is ready. Explore the trading terminal and AI assistant.', type: 'SUCCESS' },
+          { title: 'Complete your profile', body: 'Verify your identity (KYC) and enable 2FA to secure your account.', type: 'INFO' },
+        ],
+      },
       wallets: {
         create: [
           { asset: 'USDT', balance: 25000 },

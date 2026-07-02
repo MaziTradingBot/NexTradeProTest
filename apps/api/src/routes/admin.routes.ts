@@ -323,6 +323,53 @@ router.post('/kyc/:id/review', requirePermission('kyc.approve'), async (req, res
 });
 
 // ---------------------------------------------------------------------------
+// Platform settings + feature flags
+// ---------------------------------------------------------------------------
+const DEFAULT_FLAGS = [
+  { key: 'copy_trading', label: 'Copy Trading', description: 'Enable the copy-trading module.' },
+  { key: 'ai_assistant', label: 'AI Assistant', description: 'Enable the AI trading assistant.' },
+  { key: 'futures', label: 'Futures Trading', description: 'Allow leveraged futures trading.' },
+  { key: 'maintenance_mode', label: 'Maintenance Mode', description: 'Put the platform into maintenance.' },
+  { key: 'new_signups', label: 'New Signups', description: 'Allow new user registrations.' },
+];
+
+router.get('/settings', requirePermission('system.settings'), async (_req, res) => {
+  // Ensure default flags exist, then return current state.
+  for (const f of DEFAULT_FLAGS) {
+    await prisma.featureFlag.upsert({
+      where: { key: f.key },
+      create: { ...f, enabled: f.key !== 'maintenance_mode' },
+      update: { label: f.label, description: f.description },
+    });
+  }
+  const [flags, settings] = await Promise.all([
+    prisma.featureFlag.findMany({ orderBy: { label: 'asc' } }),
+    prisma.platformSetting.findMany(),
+  ]);
+  res.json({ flags, settings });
+});
+
+router.patch('/settings/flags/:key', requirePermission('system.settings'), async (req, res) => {
+  const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'enabled is required' });
+  const flag = await prisma.featureFlag.update({ where: { key: req.params.key }, data: { enabled: parsed.data.enabled } });
+  await audit({ actorId: req.user!.id, action: 'flag.toggle', target: req.params.key, meta: { enabled: parsed.data.enabled }, ip: req.ip });
+  res.json(flag);
+});
+
+router.put('/settings/:key', requirePermission('system.settings'), async (req, res) => {
+  const parsed = z.object({ value: z.string() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'value is required' });
+  const setting = await prisma.platformSetting.upsert({
+    where: { key: req.params.key },
+    create: { key: req.params.key, value: parsed.data.value },
+    update: { value: parsed.data.value },
+  });
+  await audit({ actorId: req.user!.id, action: 'setting.update', target: req.params.key, ip: req.ip });
+  res.json(setting);
+});
+
+// ---------------------------------------------------------------------------
 // Audit log
 // ---------------------------------------------------------------------------
 router.get('/audit', requirePermission('system.audit'), async (_req, res) => {

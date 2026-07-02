@@ -42,6 +42,7 @@ function DashboardInner() {
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [txns, setTxns] = useState<TxRow[]>([]);
+  const [achievements, setAchievements] = useState<{ title: string; desc: string; icon: string; earned: boolean }[]>([]);
   const [wdAsset, setWdAsset] = useState('USDT');
   const [wdAmount, setWdAmount] = useState('');
   const [wdMsg, setWdMsg] = useState<string | null>(null);
@@ -50,6 +51,10 @@ function DashboardInner() {
     api.get<WalletRow[]>('/api/account/wallets').then(setWallets).catch(() => {});
     api.get<OrderRow[]>('/api/account/orders').then(setOrders).catch(() => {});
     api.get<TxRow[]>('/api/account/transactions').then(setTxns).catch(() => {});
+    api
+      .get<{ achievements: typeof achievements }>('/api/account/achievements')
+      .then((d) => setAchievements(d.achievements))
+      .catch(() => {});
   };
   useEffect(load, []);
 
@@ -84,6 +89,9 @@ function DashboardInner() {
         <div className="flex flex-wrap gap-2">
           <Link href="/portfolio" className="btn-ghost">
             Portfolio
+          </Link>
+          <Link href="/referral" className="btn-ghost">
+            Refer &amp; Earn
           </Link>
           <Link href="/kyc" className="btn-ghost">
             Verify (KYC)
@@ -172,6 +180,34 @@ function DashboardInner() {
           </form>
         </div>
       </div>
+
+      {/* Achievements */}
+      {achievements.length > 0 && (
+        <div className="card mt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold text-white">Achievements</h2>
+            <span className="text-sm text-slate-400">
+              {achievements.filter((a) => a.earned).length}/{achievements.length} unlocked
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {achievements.map((a) => (
+              <div
+                key={a.title}
+                className={cn(
+                  'rounded-xl border p-3 text-center transition',
+                  a.earned ? 'border-brand-gold/30 bg-brand-gold/10' : 'border-white/10 bg-white/5 opacity-50',
+                )}
+                title={a.desc}
+              >
+                <div className={cn('text-2xl', !a.earned && 'grayscale')}>{a.icon}</div>
+                <div className="mt-1 text-xs font-medium text-white">{a.title}</div>
+                <div className="text-[10px] text-slate-500">{a.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent orders */}
       <div className="card mt-6">

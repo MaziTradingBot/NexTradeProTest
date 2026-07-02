@@ -20,7 +20,7 @@ interface AuthState {
   loading: boolean;
   loadMe: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, fullName: string) => Promise<void>;
+  register: (email: string, password: string, fullName: string, referral?: string) => Promise<void>;
   logout: () => Promise<void>;
   hasPermission: (perm: string) => boolean;
 }
@@ -44,11 +44,12 @@ export const useAuth = create<AuthState>((set, get) => ({
     await get().loadMe();
   },
 
-  register: async (email, password, fullName) => {
+  register: async (email, password, fullName, referral) => {
     const res = await api.post<{ accessToken: string }>('/api/auth/register', {
       email,
       password,
       fullName,
+      referral,
     });
     setAccessToken(res.accessToken);
     await get().loadMe();

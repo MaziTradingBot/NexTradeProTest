@@ -230,4 +230,102 @@ router.delete('/apikeys/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+router.get('/notifications', async (req, res) => {
+  const items = await prisma.notification.findMany({
+    where: { userId: req.user!.id },
+    orderBy: { createdAt: 'desc' },
+    take: 30,
+  });
+  const unread = items.filter((n) => !n.read).length;
+  res.json({ items, unread });
+});
+
+router.post('/notifications/:id/read', async (req, res) => {
+  await prisma.notification.updateMany({ where: { id: req.params.id, userId: req.user!.id }, data: { read: true } });
+  res.json({ ok: true });
+});
+
+router.post('/notifications/read-all', async (req, res) => {
+  await prisma.notification.updateMany({ where: { userId: req.user!.id, read: false }, data: { read: true } });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Referral / affiliate
+// ---------------------------------------------------------------------------
+router.get('/referral', async (req, res) => {
+  let user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: { referralCode: true },
+  });
+  // Backfill a referral code for older accounts.
+  if (!user?.referralCode) {
+    const code = `NXP${req.user!.id.slice(-6).toUpperCase()}`;
+    user = await prisma.user.update({ where: { id: req.user!.id }, data: { referralCode: code }, select: { referralCode: true } });
+  }
+
+  const referrals = await prisma.user.findMany({
+    where: { referredById: req.user!.id },
+    select: { fullName: true, email: true, createdAt: true, kycStatus: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const COMMISSION = 25; // demo $ per referred, active user
+  const active = referrals.filter((r) => r.kycStatus === 'APPROVED').length;
+  const earnings = referrals.length * 10 + active * COMMISSION;
+
+  const tiers = [
+    { name: 'Bronze', min: 0, rate: '20%' },
+    { name: 'Silver', min: 5, rate: '30%' },
+    { name: 'Gold', min: 15, rate: '40%' },
+    { name: 'Platinum', min: 50, rate: '50%' },
+  ];
+  const tier = [...tiers].reverse().find((t) => referrals.length >= t.min) ?? tiers[0];
+
+  res.json({
+    code: user!.referralCode,
+    totalReferrals: referrals.length,
+    activeReferrals: active,
+    earnings,
+    tier,
+    tiers,
+    referrals: referrals.map((r) => ({
+      name: r.fullName,
+      email: r.email.replace(/(.{2}).*(@.*)/, '$1***$2'),
+      joined: r.createdAt,
+      verified: r.kycStatus === 'APPROVED',
+    })),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Achievements — derived from real account activity
+// ---------------------------------------------------------------------------
+router.get('/achievements', async (req, res) => {
+  const uid = req.user!.id;
+  const [orders, deposits, referrals, user, twoFa] = await Promise.all([
+    prisma.order.count({ where: { userId: uid } }),
+    prisma.transaction.count({ where: { userId: uid, type: 'DEPOSIT' } }),
+    prisma.user.count({ where: { referredById: uid } }),
+    prisma.user.findUnique({ where: { id: uid }, select: { kycStatus: true, twoFactor: true } }),
+    Promise.resolve(null),
+  ]);
+  void twoFa;
+
+  const defs = [
+    { key: 'first_trade', title: 'First Trade', desc: 'Place your first order', icon: '🎯', earned: orders >= 1 },
+    { key: 'active_trader', title: 'Active Trader', desc: 'Place 10 orders', icon: '⚡', earned: orders >= 10 },
+    { key: 'whale', title: 'Market Mover', desc: 'Place 50 orders', icon: '🐳', earned: orders >= 50 },
+    { key: 'funded', title: 'Funded', desc: 'Make a deposit', icon: '💰', earned: deposits >= 1 },
+    { key: 'verified', title: 'Verified', desc: 'Complete KYC', icon: '✅', earned: user?.kycStatus === 'APPROVED' },
+    { key: 'secured', title: 'Fort Knox', desc: 'Enable 2FA', icon: '🔐', earned: !!user?.twoFactor },
+    { key: 'connector', title: 'Connector', desc: 'Refer a friend', icon: '🤝', earned: referrals >= 1 },
+    { key: 'influencer', title: 'Influencer', desc: 'Refer 5 friends', icon: '🌟', earned: referrals >= 5 },
+  ];
+  res.json({ achievements: defs, earned: defs.filter((d) => d.earned).length, total: defs.length });
+});
+
 export default router;

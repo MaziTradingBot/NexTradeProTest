@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   FileClock,
   BadgeCheck,
+  SlidersHorizontal,
   Home,
 } from 'lucide-react';
 import { Logo } from './Logo';
@@ -26,6 +27,7 @@ const ITEMS = [
   { href: '/admin/kyc', label: 'KYC Review', icon: BadgeCheck, perms: ['kyc.view'] },
   { href: '/admin/announcements', label: 'Announcements', icon: Megaphone, perms: ['content.manage'] },
   { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, perms: ['roles.assign', 'roles.manage'] },
+  { href: '/admin/settings', label: 'Platform Settings', icon: SlidersHorizontal, perms: ['system.settings'] },
   { href: '/admin/audit', label: 'Audit Log', icon: FileClock, perms: ['system.audit'] },
 ];
 

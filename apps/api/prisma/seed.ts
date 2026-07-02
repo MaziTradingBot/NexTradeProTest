@@ -131,6 +131,41 @@ async function main() {
     });
   }
 
+  // 6. Referral codes + demo notifications for existing users
+  const allUsers = await prisma.user.findMany({ select: { id: true, referralCode: true } });
+  for (const u of allUsers) {
+    if (!u.referralCode) {
+      await prisma.user.update({
+        where: { id: u.id },
+        data: { referralCode: `NXP${u.id.slice(-6).toUpperCase()}` },
+      });
+    }
+  }
+  if (trader) {
+    const notifCount = await prisma.notification.count({ where: { userId: trader.id } });
+    if (notifCount === 0) {
+      await prisma.notification.createMany({
+        data: [
+          { userId: trader.id, title: 'Welcome to NexTradePro 🎉', body: 'Your demo account is ready.', type: 'SUCCESS' },
+          { userId: trader.id, title: 'BTC up 3.2% today', body: 'Bitcoin is leading the market higher.', type: 'TRADE' },
+          { userId: trader.id, title: 'Secure your account', body: 'Enable 2FA in Settings → Security.', type: 'WARNING' },
+        ],
+      });
+    }
+  }
+
+  // 7. Feature flags
+  const flags = [
+    { key: 'copy_trading', label: 'Copy Trading', description: 'Enable the copy-trading module.', enabled: true },
+    { key: 'ai_assistant', label: 'AI Assistant', description: 'Enable the AI trading assistant.', enabled: true },
+    { key: 'futures', label: 'Futures Trading', description: 'Allow leveraged futures trading.', enabled: true },
+    { key: 'maintenance_mode', label: 'Maintenance Mode', description: 'Put the platform into maintenance.', enabled: false },
+    { key: 'new_signups', label: 'New Signups', description: 'Allow new user registrations.', enabled: true },
+  ];
+  for (const f of flags) {
+    await prisma.featureFlag.upsert({ where: { key: f.key }, create: f, update: { label: f.label, description: f.description } });
+  }
+
   console.log('✅ Seed complete.');
   console.log('   Super Admin login: super@nextradepro.com / Password123!');
 }
