@@ -12,8 +12,8 @@ const NAV_LINKS = [
   { href: '/trading', label: 'Trading' },
   { href: '/copy-trading', label: 'Copy Trading' },
   { href: '/tools', label: 'Tools' },
+  { href: '/news', label: 'News' },
   { href: '/pricing', label: 'Pricing' },
-  { href: '/about', label: 'About' },
 ];
 
 export function Navbar() {

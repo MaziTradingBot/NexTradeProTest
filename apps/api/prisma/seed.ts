@@ -102,6 +102,35 @@ async function main() {
     await prisma.user.update({ where: { id: trader.id }, data: { kycStatus: 'PENDING' } });
   }
 
+  // 5. Sample announcements for the public news page
+  const annCount = await prisma.announcement.count();
+  if (annCount === 0) {
+    await prisma.announcement.createMany({
+      data: [
+        {
+          title: 'NexTradePro launches advanced order book & limit orders',
+          body: 'The trading terminal now features a live order book, market and limit order types, and an open-orders panel with instant cancellation.',
+          category: 'UPDATE',
+        },
+        {
+          title: 'Bitcoin reclaims key level as market sentiment turns bullish',
+          body: 'BTC pushed higher this week amid rising volumes across major pairs. The Fear & Greed index moved back into Greed territory.',
+          category: 'MARKET',
+        },
+        {
+          title: 'Enable two-factor authentication for extra account security',
+          body: 'We strongly recommend enabling 2FA in Settings → Security to protect your account with an additional verification layer.',
+          category: 'SECURITY',
+        },
+        {
+          title: 'Pro plan free trial — unlock AI insights & copy trading',
+          body: 'For a limited time, new users can trial the Pro plan free and access AI trade insights, futures tools and copy trading.',
+          category: 'PROMOTION',
+        },
+      ],
+    });
+  }
+
   console.log('✅ Seed complete.');
   console.log('   Super Admin login: super@nextradepro.com / Password123!');
 }

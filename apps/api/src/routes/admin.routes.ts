@@ -217,6 +217,50 @@ router.post('/withdrawals/:id/review', requirePermission('withdrawals.approve'),
 });
 
 // ---------------------------------------------------------------------------
+// Deposits (Finance Admin)
+// ---------------------------------------------------------------------------
+router.get('/deposits', requirePermission('deposits.view'), async (_req, res) => {
+  const deposits = await prisma.transaction.findMany({
+    where: { type: 'DEPOSIT' },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    include: { user: { select: { email: true, fullName: true } } },
+  });
+  res.json(deposits);
+});
+
+// ---------------------------------------------------------------------------
+// Announcements / News CMS (Content Admin)
+// ---------------------------------------------------------------------------
+router.get('/announcements', requirePermission('content.manage'), async (_req, res) => {
+  const items = await prisma.announcement.findMany({ orderBy: { createdAt: 'desc' } });
+  res.json(items);
+});
+
+const announcementSchema = z.object({
+  title: z.string().min(3),
+  body: z.string().min(3),
+  category: z.enum(['UPDATE', 'MARKET', 'SECURITY', 'PROMOTION']).default('UPDATE'),
+  published: z.boolean().default(true),
+});
+
+router.post('/announcements', requirePermission('content.manage'), async (req, res) => {
+  const parsed = announcementSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+  const item = await prisma.announcement.create({
+    data: { ...parsed.data, authorId: req.user!.id },
+  });
+  await audit({ actorId: req.user!.id, action: 'announcement.create', target: item.id, ip: req.ip });
+  res.status(201).json(item);
+});
+
+router.delete('/announcements/:id', requirePermission('content.manage'), async (req, res) => {
+  await prisma.announcement.delete({ where: { id: req.params.id } }).catch(() => null);
+  await audit({ actorId: req.user!.id, action: 'announcement.delete', target: req.params.id, ip: req.ip });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
 // KYC review
 // ---------------------------------------------------------------------------
 router.get('/kyc', requirePermission('kyc.view'), async (_req, res) => {

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { Search, Star } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
+import { FearGreed } from '@/components/FearGreed';
+import { Heatmap } from '@/components/Heatmap';
 import { useTickers, assetName } from '@/lib/useTickers';
 import { formatPercent, formatCompact, cn } from '@/lib/utils';
 
@@ -34,7 +36,13 @@ export default function MarketsPage() {
           </div>
         </div>
 
-        <div className="card mt-8 overflow-hidden p-0">
+        {/* Sentiment + heatmap */}
+        <div className="mt-8 grid gap-4 lg:grid-cols-[320px_1fr]">
+          <FearGreed />
+          <Heatmap />
+        </div>
+
+        <div className="card mt-6 overflow-hidden p-0">
           <div className="grid grid-cols-12 gap-4 border-b border-white/10 px-6 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
             <div className="col-span-4">Asset</div>
             <div className="col-span-3 text-right">Price</div>

@@ -68,6 +68,25 @@ router.get('/klines', async (req, res) => {
   }
 });
 
+// GET /api/market/fear-greed — crypto Fear & Greed index (alternative.me, cached)
+router.get('/fear-greed', async (_req, res) => {
+  try {
+    const data = await cached('fng', async () => {
+      const resp = await fetch('https://api.alternative.me/fng/?limit=1');
+      if (!resp.ok) throw new Error(`FNG ${resp.status}`);
+      const json = (await resp.json()) as { data: { value: string; value_classification: string }[] };
+      const point = json.data?.[0];
+      return {
+        value: parseInt(point?.value ?? '50', 10),
+        label: point?.value_classification ?? 'Neutral',
+      };
+    });
+    res.json(data);
+  } catch {
+    res.json({ value: 54, label: 'Neutral' });
+  }
+});
+
 // Static fallback so the UI always has something to show in restricted networks.
 function fallbackTickers() {
   const base: Record<string, number> = {

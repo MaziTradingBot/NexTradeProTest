@@ -220,6 +220,31 @@ model ApiKey {
 }
 
 // ---------------------------------------------------------------------------
+// Announcements / news — managed by Content Admins, shown on the public site
+// ---------------------------------------------------------------------------
+
+enum AnnouncementCategory {
+  UPDATE
+  MARKET
+  SECURITY
+  PROMOTION
+}
+
+model Announcement {
+  id         String               @id @default(cuid())
+  title      String
+  body       String
+  category   AnnouncementCategory  @default(UPDATE)
+  published  Boolean               @default(true)
+  authorId   String?
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@index([published])
+  @@index([category])
+}
+
+// ---------------------------------------------------------------------------
 // Audit logging — every admin action is recorded
 // ---------------------------------------------------------------------------
 

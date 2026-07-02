@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
 import accountRoutes from './routes/account.routes';
 import marketRoutes from './routes/market.routes';
+import contentRoutes from './routes/content.routes';
 
 const app = express();
 
@@ -54,6 +55,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/market', marketRoutes);
+app.use('/api/content', contentRoutes);
 
 // 404
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
