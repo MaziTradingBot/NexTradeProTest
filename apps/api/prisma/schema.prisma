@@ -124,21 +124,30 @@ model UserRole {
 
 // ---------------------------------------------------------------------------
 // Trading domain (demo / simulated execution on live prices)
+// Every user has fully separate DEMO and LIVE data — wallets, orders and
+// transactions are all scoped by `mode`.
 // ---------------------------------------------------------------------------
 
+enum AccountMode {
+  DEMO
+  LIVE
+}
+
 model Wallet {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   userId    String
-  asset     String   // BTC, ETH, USDT ...
-  balance   Decimal  @default(0) @db.Decimal(24, 8)
-  locked    Decimal  @default(0) @db.Decimal(24, 8)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  asset     String      // BTC, ETH, USDT ...
+  mode      AccountMode @default(DEMO)
+  balance   Decimal     @default(0) @db.Decimal(24, 8)
+  locked    Decimal     @default(0) @db.Decimal(24, 8)
+  frozen    Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, asset])
-  @@index([userId])
+  @@unique([userId, asset, mode])
+  @@index([userId, mode])
 }
 
 enum OrderSide {
@@ -162,9 +171,11 @@ enum OrderStatus {
 model Order {
   id        String      @id @default(cuid())
   userId    String
+  mode      AccountMode @default(DEMO)
   symbol    String      // BTCUSDT
   side      OrderSide
   type      OrderType
+  leverage  Int         @default(1)
   price     Decimal     @db.Decimal(24, 8)
   amount    Decimal     @db.Decimal(24, 8)
   filled    Decimal     @default(0) @db.Decimal(24, 8)
@@ -174,7 +185,7 @@ model Order {
 
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@index([userId, mode])
   @@index([symbol])
 }
 
@@ -186,29 +197,54 @@ enum TxType {
 
 enum TxStatus {
   PENDING
+  UNDER_REVIEW
   APPROVED
-  REJECTED
+  PROCESSING
   COMPLETED
+  REJECTED
 }
 
 model Transaction {
-  id          String   @id @default(cuid())
+  id          String      @id @default(cuid())
   userId      String
+  mode        AccountMode @default(DEMO)
   type        TxType
   asset       String
-  amount      Decimal  @db.Decimal(24, 8)
-  status      TxStatus @default(PENDING)
+  network     String?
+  address     String?
+  amount      Decimal     @db.Decimal(24, 8)
+  fee         Decimal     @default(0) @db.Decimal(24, 8)
+  status      TxStatus    @default(PENDING)
   reference   String?
+  note        String? // internal admin note
   reviewedById String?
   reviewedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@index([userId, mode])
   @@index([status])
   @@index([type])
+}
+
+// Admin-managed deposit wallet addresses per asset/network (demo).
+model WalletAddress {
+  id           String   @id @default(cuid())
+  asset        String
+  network      String
+  address      String
+  minDeposit   String   @default("0")
+  confirmations Int     @default(2)
+  instructions String?
+  isDefault    Boolean  @default(false)
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([asset, network])
+  @@index([asset])
 }
 
 enum NotificationType {

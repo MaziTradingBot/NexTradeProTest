@@ -5,8 +5,10 @@ import Link from 'next/link';
 import { Wallet, ArrowDownToLine, ListOrderedIcon, Shield } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
+import { ModeSwitcher } from '@/components/ModeSwitcher';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
+import { useMode } from '@/lib/useMode';
 import { formatCurrency, cn } from '@/lib/utils';
 
 interface WalletRow {
@@ -39,6 +41,7 @@ const REF: Record<string, number> = { USDT: 1, BTC: 67000, ETH: 3500 };
 
 function DashboardInner() {
   const { user } = useAuth();
+  const { mode } = useMode();
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [txns, setTxns] = useState<TxRow[]>([]);
@@ -77,8 +80,11 @@ function DashboardInner() {
     <section className="mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Welcome, {user?.fullName}</h1>
-          <div className="mt-1 flex flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-white">Welcome, {user?.fullName}</h1>
+            <ModeSwitcher compact />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
             {user?.roles.map((r) => (
               <span key={r.key} className={cn('badge', r.isAdmin ? 'bg-brand-blue/15 text-brand-blue' : 'bg-white/5 text-slate-300')}>
                 {r.isAdmin && <Shield size={11} />} {r.name}
@@ -110,6 +116,27 @@ function DashboardInner() {
         </div>
       </div>
 
+      {/* Mode notice */}
+      <div
+        className={cn(
+          'mt-5 rounded-xl border px-4 py-3 text-sm',
+          mode === 'DEMO' ? 'border-brand-emerald/25 bg-brand-emerald/10 text-slate-200' : 'border-brand-blue/25 bg-brand-blue/10 text-slate-200',
+        )}
+      >
+        {mode === 'DEMO' ? (
+          <>
+            <span className="font-semibold text-white">You are using Demo Mode.</span> All balances, trades, deposits,
+            withdrawals, analytics and transaction references are simulated for demonstration and educational purposes.
+          </>
+        ) : (
+          <>
+            <span className="font-semibold text-white">You are using Live Mode.</span> Trading is available once exchange
+            integrations, compliance requirements and administrator activation have been completed. You can still manage
+            your profile, wallets, deposit &amp; withdrawal requests, and security settings.
+          </>
+        )}
+      </div>
+
       {/* Portfolio summary */}
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <div className="card">
@@ -117,7 +144,9 @@ function DashboardInner() {
             <Wallet size={16} /> Portfolio value
           </div>
           <div className="mt-2 text-3xl font-bold text-white">{formatCurrency(portfolioUsd)}</div>
-          <div className="mt-1 text-xs text-brand-emerald">Demo balance</div>
+          <div className={cn('mt-1 text-xs', mode === 'DEMO' ? 'text-brand-emerald' : 'text-brand-blue')}>
+            {mode === 'DEMO' ? 'Demo balance' : 'Live balance'}
+          </div>
         </div>
         <div className="card">
           <div className="flex items-center gap-2 text-sm text-slate-400">

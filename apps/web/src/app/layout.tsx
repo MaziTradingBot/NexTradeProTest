@@ -3,6 +3,7 @@ import './globals.css';
 import { SupportButton } from '@/components/SupportButton';
 import { WelcomeTour } from '@/components/WelcomeTour';
 import { MaintenanceGate } from '@/components/MaintenanceGate';
+import { ModeBadge } from '@/components/ModeBadge';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://nextradepro.vercel.app'),
@@ -44,11 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-screen antialiased">
-        {/* Global demo-mode indicator */}
-        <div className="fixed bottom-4 left-4 z-[60] hidden items-center gap-2 rounded-full border border-brand-gold/30 bg-brand-gold/10 px-3 py-1.5 text-xs font-medium text-brand-gold backdrop-blur-md sm:flex">
-          <span className="h-2 w-2 animate-pulse-glow rounded-full bg-brand-gold" />
-          Demo Mode
-        </div>
+        <ModeBadge />
         <MaintenanceGate>{children}</MaintenanceGate>
         <SupportButton />
         <WelcomeTour />

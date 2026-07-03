@@ -8,16 +8,28 @@ import { generateBase32Secret, otpauthUri, verifyTotp } from '../lib/totp';
 const router = Router();
 router.use(authenticate);
 
+// Active account mode comes from the x-nxp-mode header (default DEMO).
+type Mode = 'DEMO' | 'LIVE';
+function getMode(req: import('express').Request): Mode {
+  return req.header('x-nxp-mode') === 'LIVE' ? 'LIVE' : 'DEMO';
+}
+
+const LIVE_TRADING_MSG =
+  'Real trading is available only after exchange integration, regulatory compliance, and administrator activation.';
+
 // GET /api/account/wallets
 router.get('/wallets', async (req, res) => {
-  const wallets = await prisma.wallet.findMany({ where: { userId: req.user!.id }, orderBy: { asset: 'asc' } });
+  const wallets = await prisma.wallet.findMany({
+    where: { userId: req.user!.id, mode: getMode(req) },
+    orderBy: { asset: 'asc' },
+  });
   res.json(wallets);
 });
 
 // GET /api/account/orders
 router.get('/orders', async (req, res) => {
   const orders = await prisma.order.findMany({
-    where: { userId: req.user!.id },
+    where: { userId: req.user!.id, mode: getMode(req) },
     orderBy: { createdAt: 'desc' },
     take: 50,
   });
@@ -31,19 +43,26 @@ const orderSchema = z.object({
   type: z.enum(['MARKET', 'LIMIT', 'STOP']),
   price: z.number().positive(),
   amount: z.number().positive(),
+  leverage: z.number().int().min(1).max(125).optional(),
 });
 
 router.post('/orders', async (req, res) => {
+  const mode = getMode(req);
+  // Live trading stays disabled until real exchange integration.
+  if (mode === 'LIVE') return res.status(403).json({ error: LIVE_TRADING_MSG });
+
   const parsed = orderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
-  const { symbol, side, type, price, amount } = parsed.data;
+  const { symbol, side, type, price, amount, leverage } = parsed.data;
 
   const order = await prisma.order.create({
     data: {
       userId: req.user!.id,
+      mode,
       symbol,
       side,
       type,
+      leverage: leverage ?? 1,
       price,
       amount,
       // Market orders fill instantly in the demo engine.
@@ -52,7 +71,7 @@ router.post('/orders', async (req, res) => {
     },
   });
 
-  await audit({ actorId: req.user!.id, action: 'order.place', target: order.id, meta: { symbol, side }, ip: req.ip });
+  await audit({ actorId: req.user!.id, action: 'order.place', target: order.id, meta: { symbol, side, mode }, ip: req.ip });
   res.status(201).json(order);
 });
 
@@ -69,7 +88,7 @@ router.delete('/orders/:id', async (req, res) => {
 // GET /api/account/transactions
 router.get('/transactions', async (req, res) => {
   const txns = await prisma.transaction.findMany({
-    where: { userId: req.user!.id },
+    where: { userId: req.user!.id, mode: getMode(req) },
     orderBy: { createdAt: 'desc' },
     take: 50,
   });
@@ -77,42 +96,84 @@ router.get('/transactions', async (req, res) => {
 });
 
 // POST /api/account/withdraw — creates a PENDING withdrawal for admin review
-const withdrawSchema = z.object({ asset: z.string().min(2), amount: z.number().positive() });
+const withdrawSchema = z.object({
+  asset: z.string().min(2),
+  amount: z.number().positive(),
+  network: z.string().optional(),
+  address: z.string().optional(),
+});
 router.post('/withdraw', async (req, res) => {
+  const mode = getMode(req);
   const parsed = withdrawSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid withdrawal' });
+  const { asset, amount, network, address } = parsed.data;
+  const fee = +(amount * 0.001).toFixed(8); // 0.1% demo network fee
+
   const txn = await prisma.transaction.create({
     data: {
       userId: req.user!.id,
+      mode,
       type: 'WITHDRAWAL',
-      asset: parsed.data.asset,
-      amount: parsed.data.amount,
+      asset,
+      network,
+      address,
+      amount,
+      fee,
       status: 'PENDING',
       reference: `WD-${Date.now()}`,
     },
   });
-  await audit({ actorId: req.user!.id, action: 'withdrawal.request', target: txn.id, ip: req.ip });
+  await audit({ actorId: req.user!.id, action: 'withdrawal.request', target: txn.id, meta: { mode }, ip: req.ip });
   res.status(201).json(txn);
 });
 
-// POST /api/account/deposit — demo deposit, instantly credited
+// POST /api/account/deposit — DEMO credits instantly; LIVE creates a request
+const depositSchema = z.object({
+  asset: z.string().min(2),
+  amount: z.number().positive(),
+  network: z.string().optional(),
+});
 router.post('/deposit', async (req, res) => {
-  const parsed = withdrawSchema.safeParse(req.body);
+  const mode = getMode(req);
+  const parsed = depositSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid deposit' });
-  const { asset, amount } = parsed.data;
+  const { asset, amount, network } = parsed.data;
 
+  if (mode === 'LIVE') {
+    // Live deposits are recorded as requests only — no auto-credit.
+    const txn = await prisma.transaction.create({
+      data: { userId: req.user!.id, mode, type: 'DEPOSIT', asset, network, amount, status: 'PENDING', reference: `DP-${Date.now()}` },
+    });
+    await audit({ actorId: req.user!.id, action: 'deposit.request', target: txn.id, meta: { mode }, ip: req.ip });
+    return res.status(201).json(txn);
+  }
+
+  // Demo deposit: simulate confirmations, then credit instantly.
   const [txn] = await prisma.$transaction([
     prisma.transaction.create({
-      data: { userId: req.user!.id, type: 'DEPOSIT', asset, amount, status: 'COMPLETED', reference: `DP-${Date.now()}` },
+      data: { userId: req.user!.id, mode, type: 'DEPOSIT', asset, network, amount, status: 'COMPLETED', reference: `DP-${Date.now()}` },
     }),
     prisma.wallet.upsert({
-      where: { userId_asset: { userId: req.user!.id, asset } },
-      create: { userId: req.user!.id, asset, balance: amount },
+      where: { userId_asset_mode: { userId: req.user!.id, asset, mode } },
+      create: { userId: req.user!.id, asset, mode, balance: amount },
       update: { balance: { increment: amount } },
     }),
   ]);
   await audit({ actorId: req.user!.id, action: 'deposit.demo', target: txn.id, ip: req.ip });
   res.status(201).json(txn);
+});
+
+// GET /api/account/deposit-addresses — public demo deposit addresses per asset
+router.get('/deposit-addresses', async (_req, res) => {
+  try {
+    const addrs = await prisma.walletAddress.findMany({
+      where: { enabled: true },
+      orderBy: [{ asset: 'asc' }, { isDefault: 'desc' }],
+    });
+    res.json(addrs);
+  } catch {
+    res.json([]);
+  }
 });
 
 // PATCH /api/account/profile — update display name

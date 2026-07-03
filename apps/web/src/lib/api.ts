@@ -24,10 +24,16 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+export function getMode(): 'DEMO' | 'LIVE' {
+  if (typeof window === 'undefined') return 'DEMO';
+  return localStorage.getItem('nxp-mode') === 'LIVE' ? 'LIVE' : 'DEMO';
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getAccessToken();
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
+  headers.set('x-nxp-mode', getMode());
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const res = await fetch(`${API_BASE}${path}`, {

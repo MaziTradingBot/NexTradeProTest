@@ -166,6 +166,31 @@ async function main() {
     await prisma.featureFlag.upsert({ where: { key: f.key }, create: f, update: { label: f.label, description: f.description } });
   }
 
+  // 8. Demo deposit wallet addresses (per asset/network)
+  const addresses = [
+    { asset: 'BTC', network: 'Bitcoin', address: 'bc1qdemo9x7k2p4nxtradepro8sq5m3vz6h0demoaddr', minDeposit: '0.0005', confirmations: 2, isDefault: true },
+    { asset: 'ETH', network: 'ERC20', address: '0xDEMoNexTradePro1234567890AbCdEf1234567890', minDeposit: '0.01', confirmations: 12, isDefault: true },
+    { asset: 'USDT', network: 'ERC20', address: '0xDEMoUSDTeRc20NexTradePro0987654321FeDcBa00', minDeposit: '10', confirmations: 12, isDefault: true },
+    { asset: 'USDT', network: 'TRC20', address: 'TDemoUSDTtrc20NexTradePro9f8e7d6c5b4a3210xy', minDeposit: '10', confirmations: 20 },
+    { asset: 'USDT', network: 'BEP20', address: '0xDEMoUSDTbep20NexTradePro5566778899aabbccddee', minDeposit: '10', confirmations: 15 },
+    { asset: 'USDC', network: 'ERC20', address: '0xDEMoUSDCeRc20NexTradePro1122334455667788990a', minDeposit: '10', confirmations: 12, isDefault: true },
+    { asset: 'BNB', network: 'BEP20', address: '0xDEMoBNBbep20NexTradeProaabbccdd11223344556677', minDeposit: '0.05', confirmations: 15, isDefault: true },
+    { asset: 'SOL', network: 'Solana', address: 'DemoSoLNexTradePro1111222233334444555566667777', minDeposit: '0.1', confirmations: 32, isDefault: true },
+    { asset: 'XRP', network: 'XRP Ledger', address: 'rDemoXRPnexTradePro1234567890abcdef', minDeposit: '10', confirmations: 4, isDefault: true },
+    { asset: 'ADA', network: 'Cardano', address: 'addr1demoNexTradeProadacardano9f8e7d6c5b4a3210', minDeposit: '10', confirmations: 15, isDefault: true },
+    { asset: 'DOGE', network: 'Dogecoin', address: 'DDemoDOGEnexTradePro1234567890abcdefghij', minDeposit: '20', confirmations: 20, isDefault: true },
+    { asset: 'LTC', network: 'Litecoin', address: 'ltc1qdemoNexTradeProltc9x7k2p4sq5m3vz6h0addr', minDeposit: '0.05', confirmations: 6, isDefault: true },
+    { asset: 'AVAX', network: 'C-Chain', address: '0xDEMoAVAXcchainNexTradePro778899aabbccddeeff00', minDeposit: '0.1', confirmations: 12, isDefault: true },
+    { asset: 'MATIC', network: 'Polygon', address: '0xDEMoMATICpolygonNexTradePro33445566778899aabb', minDeposit: '1', confirmations: 30, isDefault: true },
+  ];
+  for (const a of addresses) {
+    await prisma.walletAddress.upsert({
+      where: { asset_network: { asset: a.asset, network: a.network } },
+      create: { ...a, instructions: `Send only ${a.asset} via ${a.network} to this address. Demo address — do not send real funds.` },
+      update: { address: a.address, minDeposit: a.minDeposit, confirmations: a.confirmations },
+    });
+  }
+
   console.log('✅ Seed complete.');
   console.log('   Super Admin login: super@nextradepro.com / Password123!');
 }

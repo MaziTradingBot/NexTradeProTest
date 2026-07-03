@@ -73,9 +73,17 @@ router.post('/register', async (req, res) => {
       },
       wallets: {
         create: [
-          { asset: 'USDT', balance: 25000 },
-          { asset: 'BTC', balance: 0.35 },
-          { asset: 'ETH', balance: 4 },
+          // Demo wallet — funded with $100k + crypto for the showcase.
+          { asset: 'USDT', mode: 'DEMO', balance: 100000 },
+          { asset: 'BTC', mode: 'DEMO', balance: 1.5 },
+          { asset: 'ETH', mode: 'DEMO', balance: 20 },
+          { asset: 'SOL', mode: 'DEMO', balance: 200 },
+          { asset: 'BNB', mode: 'DEMO', balance: 50 },
+          { asset: 'XRP', mode: 'DEMO', balance: 5000 },
+          // Live wallet — empty until real deposits are approved.
+          { asset: 'USDT', mode: 'LIVE', balance: 0 },
+          { asset: 'BTC', mode: 'LIVE', balance: 0 },
+          { asset: 'ETH', mode: 'LIVE', balance: 0 },
         ],
       },
     },

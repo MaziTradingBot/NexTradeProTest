@@ -7,6 +7,7 @@ import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationBell } from './NotificationBell';
 import { GlobalSearch } from './GlobalSearch';
+import { ModeSwitcher } from './ModeSwitcher';
 import { useAuth } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
@@ -61,6 +62,7 @@ export function Navbar() {
           <ThemeToggle />
           {user ? (
             <>
+              <ModeSwitcher />
               <NotificationBell />
               {user.isAdmin && (
                 <Link href="/admin" className="btn-ghost">

@@ -15,6 +15,7 @@ import { OrderBook } from '@/components/OrderBook';
 import { RecentTrades } from '@/components/RecentTrades';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
+import { useMode } from '@/lib/useMode';
 import { useTickers, assetName } from '@/lib/useTickers';
 import { formatPercent, cn } from '@/lib/utils';
 
@@ -40,6 +41,8 @@ function TradingTerminal() {
   const symbol = (params.get('symbol') || 'BTCUSDT').toUpperCase();
   const { tickers } = useTickers(5000);
   const { user } = useAuth();
+  const { mode } = useMode();
+  const isLive = mode === 'LIVE';
   const ticker = tickers.find((t) => t.symbol === symbol);
 
   const [klines, setKlines] = useState<Kline[]>([]);
@@ -99,6 +102,7 @@ function TradingTerminal() {
         type: orderType,
         price: limit,
         amount: amt,
+        leverage: market === 'FUTURES' ? leverage : 1,
       });
       const lev = market === 'FUTURES' ? ` at ${leverage}x` : '';
       const dir = market === 'FUTURES' ? (side === 'BUY' ? 'LONG' : 'SHORT') : side;
@@ -134,8 +138,23 @@ function TradingTerminal() {
             </div>
           </div>
         )}
-        <span className="ml-auto badge bg-brand-gold/10 text-brand-gold">Simulated execution</span>
+        <span className={cn('ml-auto badge', isLive ? 'bg-brand-blue/15 text-brand-blue' : 'bg-brand-gold/10 text-brand-gold')}>
+          {isLive ? 'Live Mode' : 'Simulated execution'}
+        </span>
       </div>
+
+      {isLive && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-brand-blue/30 bg-brand-blue/10 px-4 py-3 text-sm text-slate-200">
+          <span className="mt-0.5 text-brand-blue">🔒</span>
+          <div>
+            <div className="font-semibold text-white">Live trading is not yet available</div>
+            <p className="mt-0.5 text-slate-400">
+              Real trading is available only after exchange integration, regulatory compliance, and
+              administrator activation. Switch to Demo Mode to trade with simulated execution.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_240px_300px]">
         {/* Chart */}
@@ -285,9 +304,15 @@ function TradingTerminal() {
 
           <button
             onClick={placeOrder}
-            className={cn('w-full rounded-xl py-3 text-sm font-semibold text-white transition', side === 'BUY' ? 'bg-brand-emerald hover:brightness-110' : 'bg-red-500 hover:brightness-110')}
+            disabled={isLive}
+            className={cn(
+              'w-full rounded-xl py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50',
+              side === 'BUY' ? 'bg-brand-emerald hover:brightness-110' : 'bg-red-500 hover:brightness-110',
+            )}
           >
-            {market === 'FUTURES' ? `${side === 'BUY' ? 'Long' : 'Short'} ${leverage}x` : side === 'BUY' ? 'Buy' : 'Sell'} {assetName(symbol)}
+            {isLive
+              ? 'Unavailable in Live Mode'
+              : `${market === 'FUTURES' ? `${side === 'BUY' ? 'Long' : 'Short'} ${leverage}x` : side === 'BUY' ? 'Buy' : 'Sell'} ${assetName(symbol)}`}
           </button>
 
           {msg && <p className="mt-3 text-center text-xs text-slate-300">{msg}</p>}
