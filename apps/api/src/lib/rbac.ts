@@ -18,6 +18,8 @@ export const PERMISSIONS = {
   'withdrawals.approve': { name: 'Approve / reject withdrawals', group: 'Withdrawals' },
   'deposits.view': { name: 'View deposits', group: 'Finance' },
   'deposits.manage': { name: 'Manage deposits', group: 'Finance' },
+  'wallets.manage': { name: 'Manage deposit wallet addresses', group: 'Finance' },
+  'balances.manage': { name: 'Credit / debit / freeze user balances', group: 'Finance' },
 
   // KYC
   'kyc.view': { name: 'View KYC submissions', group: 'KYC' },
@@ -91,6 +93,8 @@ export const ROLES: RoleSeed[] = [
       'deposits.manage',
       'withdrawals.view',
       'withdrawals.approve',
+      'wallets.manage',
+      'balances.manage',
       'admin.analytics.view',
     ],
   },

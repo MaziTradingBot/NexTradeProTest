@@ -13,6 +13,7 @@ import {
   BadgeCheck,
   SlidersHorizontal,
   Wand2,
+  WalletCards,
   Home,
 } from 'lucide-react';
 import { Logo } from './Logo';
@@ -25,6 +26,7 @@ const ITEMS = [
   { href: '/admin/users', label: 'Users & Roles', icon: Users, perms: ['users.view'] },
   { href: '/admin/withdrawals', label: 'Withdrawals', icon: ArrowDownToLine, perms: ['withdrawals.view'] },
   { href: '/admin/deposits', label: 'Deposits', icon: ArrowUpToLine, perms: ['deposits.view'] },
+  { href: '/admin/wallets', label: 'Wallet Management', icon: WalletCards, perms: ['wallets.manage', 'balances.manage'] },
   { href: '/admin/kyc', label: 'KYC Review', icon: BadgeCheck, perms: ['kyc.view'] },
   { href: '/admin/announcements', label: 'Announcements', icon: Megaphone, perms: ['content.manage'] },
   { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, perms: ['roles.assign', 'roles.manage'] },

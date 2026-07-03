@@ -323,6 +323,110 @@ router.post('/kyc/:id/review', requirePermission('kyc.approve'), async (req, res
 });
 
 // ---------------------------------------------------------------------------
+// Deposit wallet-address management
+// ---------------------------------------------------------------------------
+router.get('/wallet-addresses', requirePermission('wallets.manage'), async (_req, res) => {
+  const addrs = await prisma.walletAddress.findMany({ orderBy: [{ asset: 'asc' }, { network: 'asc' }] });
+  res.json(addrs);
+});
+
+const walletAddrSchema = z.object({
+  asset: z.string().min(2),
+  network: z.string().min(2),
+  address: z.string().min(6),
+  minDeposit: z.string().optional(),
+  confirmations: z.number().int().min(0).optional(),
+  instructions: z.string().optional(),
+  isDefault: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+});
+
+router.post('/wallet-addresses', requirePermission('wallets.manage'), async (req, res) => {
+  const parsed = walletAddrSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+  try {
+    const addr = await prisma.walletAddress.create({ data: parsed.data });
+    await audit({ actorId: req.user!.id, action: 'walletaddr.create', target: addr.id, meta: { asset: addr.asset, network: addr.network }, ip: req.ip });
+    res.status(201).json(addr);
+  } catch {
+    res.status(409).json({ error: 'An address for this asset + network already exists' });
+  }
+});
+
+router.patch('/wallet-addresses/:id', requirePermission('wallets.manage'), async (req, res) => {
+  const parsed = walletAddrSchema.partial().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid update' });
+  const addr = await prisma.walletAddress.update({ where: { id: req.params.id }, data: parsed.data });
+  await audit({ actorId: req.user!.id, action: 'walletaddr.update', target: addr.id, ip: req.ip });
+  res.json(addr);
+});
+
+router.delete('/wallet-addresses/:id', requirePermission('wallets.manage'), async (req, res) => {
+  await prisma.walletAddress.delete({ where: { id: req.params.id } }).catch(() => null);
+  await audit({ actorId: req.user!.id, action: 'walletaddr.delete', target: req.params.id, ip: req.ip });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Manual balance management (credit / debit / freeze / unfreeze / reset)
+// ---------------------------------------------------------------------------
+router.get('/users/:id/wallets', requirePermission('balances.manage', 'users.view'), async (req, res) => {
+  const wallets = await prisma.wallet.findMany({
+    where: { userId: req.params.id },
+    orderBy: [{ mode: 'asc' }, { asset: 'asc' }],
+  });
+  res.json(wallets);
+});
+
+const balanceSchema = z.object({
+  asset: z.string().min(2),
+  mode: z.enum(['DEMO', 'LIVE']),
+  action: z.enum(['CREDIT', 'DEBIT', 'FREEZE', 'UNFREEZE', 'RESET']),
+  amount: z.number().nonnegative().optional(),
+});
+
+router.post('/users/:id/balance', requirePermission('balances.manage'), async (req, res) => {
+  const parsed = balanceSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+  const { asset, mode, action, amount } = parsed.data;
+
+  const where = { userId_asset_mode: { userId: req.params.id, asset, mode } };
+  let data: Record<string, unknown> = {};
+  switch (action) {
+    case 'CREDIT':
+      data = { balance: { increment: amount ?? 0 } };
+      break;
+    case 'DEBIT':
+      data = { balance: { decrement: amount ?? 0 } };
+      break;
+    case 'FREEZE':
+      data = { frozen: true };
+      break;
+    case 'UNFREEZE':
+      data = { frozen: false };
+      break;
+    case 'RESET':
+      data = { balance: 0, locked: 0, frozen: false };
+      break;
+  }
+
+  const wallet = await prisma.wallet.upsert({
+    where,
+    create: { userId: req.params.id, asset, mode, balance: action === 'CREDIT' ? amount ?? 0 : 0 },
+    update: data,
+  });
+
+  await audit({
+    actorId: req.user!.id,
+    action: `balance.${action.toLowerCase()}`,
+    target: req.params.id,
+    meta: { asset, mode, amount },
+    ip: req.ip,
+  });
+  res.json(wallet);
+});
+
+// ---------------------------------------------------------------------------
 // Platform settings + feature flags
 // ---------------------------------------------------------------------------
 const DEFAULT_FLAGS = [
