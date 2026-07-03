@@ -9,6 +9,7 @@ import { env } from './config/env';
 
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
+import toolkitRoutes from './routes/toolkit.routes';
 import accountRoutes from './routes/account.routes';
 import marketRoutes from './routes/market.routes';
 import contentRoutes from './routes/content.routes';
@@ -52,6 +53,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'nxp-api', t
 app.get('/', (_req, res) => res.json({ name: 'NexTradePro API', version: '1.0.0', docs: '/health' }));
 
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/admin/toolkit', toolkitRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/market', marketRoutes);
