@@ -136,6 +136,11 @@ function WalletInner() {
             <p className="text-xs text-slate-500">
               {tab === 'DEPOSIT' ? 'Demo deposits are credited instantly.' : 'Withdrawals require admin approval.'}
             </p>
+            {tab === 'DEPOSIT' && (
+              <a href="/deposit" className="block text-center text-xs font-medium text-brand-blue hover:underline">
+                Or deposit via wallet address + QR →
+              </a>
+            )}
           </form>
         </div>
       </div>
