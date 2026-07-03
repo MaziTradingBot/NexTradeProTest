@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/store';
 const DEMO_ACCOUNTS = [
   ['Super Admin', 'super@nextradepro.com'],
   ['Withdrawal Admin', 'withdrawals@nextradepro.com'],
-  ['KYC Admin', 'kyc@nextradepro.com'],
+  ['Broker', 'broker@nextradepro.com'],
   ['Trader', 'trader@nextradepro.com'],
 ];
 

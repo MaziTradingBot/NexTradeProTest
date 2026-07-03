@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
 import toolkitRoutes from './routes/toolkit.routes';
 import accountRoutes from './routes/account.routes';
+import brokerRoutes from './routes/broker.routes';
 import marketRoutes from './routes/market.routes';
 import contentRoutes from './routes/content.routes';
 
@@ -56,6 +57,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/admin/toolkit', toolkitRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/account', accountRoutes);
+app.use('/api/broker', brokerRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/content', contentRoutes);
 

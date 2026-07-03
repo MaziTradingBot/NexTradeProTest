@@ -64,6 +64,11 @@ export function Navbar() {
             <>
               <ModeSwitcher />
               <NotificationBell />
+              {user.isBroker && (
+                <Link href="/broker" className="btn-ghost">
+                  Broker
+                </Link>
+              )}
               {user.isAdmin && (
                 <Link href="/admin" className="btn-ghost">
                   Admin

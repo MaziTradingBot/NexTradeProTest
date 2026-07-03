@@ -7,9 +7,11 @@ import { useAuth } from '@/lib/store';
 export function AuthGuard({
   children,
   adminOnly = false,
+  brokerOnly = false,
 }: {
   children: React.ReactNode;
   adminOnly?: boolean;
+  brokerOnly?: boolean;
 }) {
   const { user, loading, loadMe } = useAuth();
   const router = useRouter();
@@ -21,7 +23,8 @@ export function AuthGuard({
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
     if (!loading && user && adminOnly && !user.isAdmin) router.replace('/dashboard');
-  }, [loading, user, adminOnly, router]);
+    if (!loading && user && brokerOnly && !user.isBroker) router.replace('/dashboard');
+  }, [loading, user, adminOnly, brokerOnly, router]);
 
   if (loading || !user) {
     return (
@@ -32,6 +35,7 @@ export function AuthGuard({
   }
 
   if (adminOnly && !user.isAdmin) return null;
+  if (brokerOnly && !user.isBroker) return null;
 
   return <>{children}</>;
 }

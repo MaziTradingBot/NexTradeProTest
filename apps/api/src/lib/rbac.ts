@@ -32,6 +32,10 @@ export const PERMISSIONS = {
   // Content
   'content.manage': { name: 'Manage blog, news & CMS', group: 'Content' },
 
+  // Broker
+  'broker.access': { name: 'Access the broker portal', group: 'Broker' },
+  'broker.clients.manage': { name: 'Manage assigned clients', group: 'Broker' },
+
   // System
   'system.settings': { name: 'Manage platform settings', group: 'System' },
   'system.audit': { name: 'View audit logs', group: 'System' },
@@ -129,5 +133,13 @@ export const ROLES: RoleSeed[] = [
     isAdmin: true,
     isSystem: true,
     permissions: ['admin.access', 'users.view', 'users.manage', 'roles.assign'],
+  },
+  {
+    key: 'BROKER',
+    name: 'Broker',
+    description: 'Broker/IB with access to a dedicated portal for assigned clients.',
+    isAdmin: false,
+    isSystem: true,
+    permissions: ['broker.access', 'broker.clients.manage'],
   },
 ];

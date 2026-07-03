@@ -167,6 +167,7 @@ router.get('/me', authenticate, async (req, res) => {
     permissions: Array.from(u.permissions),
     isSuperAdmin: u.isSuperAdmin,
     isAdmin: u.isSuperAdmin || u.roles.some((r) => r.isAdmin),
+    isBroker: u.isSuperAdmin || u.permissions.has('broker.access'),
     kycStatus: profile?.kycStatus ?? 'NONE',
     twoFactor: profile?.twoFactor ?? false,
   });

@@ -52,6 +52,7 @@ async function main() {
     { email: 'withdrawals@nextradepro.com', fullName: 'Aisha Khan', roleKeys: ['WITHDRAWAL_ADMIN'] },
     { email: 'kyc@nextradepro.com', fullName: 'Diego Santos', roleKeys: ['KYC_ADMIN'] },
     { email: 'support@nextradepro.com', fullName: 'Lena Wagner', roleKeys: ['SUPPORT_ADMIN'] },
+    { email: 'broker@nextradepro.com', fullName: 'Priya Nair', roleKeys: ['BROKER'] },
     { email: 'trader@nextradepro.com', fullName: 'Jordan Price', roleKeys: ['USER'], kyc: true },
   ];
 
@@ -164,6 +165,58 @@ async function main() {
   ];
   for (const f of flags) {
     await prisma.featureFlag.upsert({ where: { key: f.key }, create: f, update: { label: f.label, description: f.description } });
+  }
+
+  // 7b. Broker + assigned demo clients
+  const broker = await prisma.user.findUnique({ where: { email: 'broker@nextradepro.com' } });
+  if (broker) {
+    // Assign the standard trader to this broker.
+    if (trader) await prisma.user.update({ where: { id: trader.id }, data: { brokerId: broker.id } });
+
+    const clientSeeds = [
+      { email: 'client1@nextradepro.com', fullName: 'Ethan Cole', usdt: 82000, kyc: 'APPROVED' as const },
+      { email: 'client2@nextradepro.com', fullName: 'Mia Fernandez', usdt: 45000, kyc: 'PENDING' as const },
+      { email: 'client3@nextradepro.com', fullName: 'Noah Weber', usdt: 128000, kyc: 'APPROVED' as const },
+      { email: 'client4@nextradepro.com', fullName: 'Ava Rossi', usdt: 23000, kyc: 'NONE' as const },
+    ];
+    for (const c of clientSeeds) {
+      const client = await prisma.user.upsert({
+        where: { email: c.email },
+        create: {
+          email: c.email,
+          passwordHash: pw,
+          fullName: c.fullName,
+          kycStatus: c.kyc,
+          brokerId: broker.id,
+          referralCode: `NXP${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+          roles: roleByKey.get('USER') ? { create: { roleId: roleByKey.get('USER')!.id } } : undefined,
+          wallets: {
+            create: [
+              { asset: 'USDT', mode: 'DEMO', balance: c.usdt },
+              { asset: 'BTC', mode: 'DEMO', balance: 0.8 },
+              { asset: 'ETH', mode: 'DEMO', balance: 10 },
+            ],
+          },
+        },
+        update: { brokerId: broker.id },
+      });
+      const orderCount = await prisma.order.count({ where: { userId: client.id } });
+      if (orderCount === 0) {
+        await prisma.order.createMany({
+          data: Array.from({ length: 5 }).map(() => ({
+            userId: client.id,
+            mode: 'DEMO' as const,
+            symbol: 'BTCUSDT',
+            side: (Math.random() > 0.5 ? 'BUY' : 'SELL') as 'BUY' | 'SELL',
+            type: 'MARKET' as const,
+            price: 67000,
+            amount: +(Math.random() * 0.5).toFixed(4),
+            filled: 1,
+            status: 'FILLED' as const,
+          })),
+        });
+      }
+    }
   }
 
   // 8. Demo deposit wallet addresses (per asset/network)

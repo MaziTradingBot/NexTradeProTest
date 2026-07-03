@@ -39,6 +39,7 @@ model User {
   twoFactorSecret String?
   referralCode    String?    @unique
   referredById    String?
+  brokerId        String?
   demoMode      Boolean    @default(true)
   lastLoginAt   DateTime?
   createdAt     DateTime   @default(now())
@@ -53,6 +54,8 @@ model User {
   notifications Notification[]
   referrals     User[]          @relation("Referrals")
   referredBy    User?           @relation("Referrals", fields: [referredById], references: [id])
+  clients       User[]          @relation("BrokerClients")
+  broker        User?           @relation("BrokerClients", fields: [brokerId], references: [id])
   auditLogs     AuditLog[]      @relation("ActorLogs")
   assignedRoles UserRole[]      @relation("AssignedBy")
 
