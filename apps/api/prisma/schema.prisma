@@ -178,10 +178,12 @@ model Order {
   symbol    String      // BTCUSDT
   side      OrderSide
   type      OrderType
-  leverage  Int         @default(1)
-  price     Decimal     @db.Decimal(24, 8)
-  amount    Decimal     @db.Decimal(24, 8)
-  filled    Decimal     @default(0) @db.Decimal(24, 8)
+  leverage   Int        @default(1)
+  price      Decimal    @db.Decimal(24, 8)
+  amount     Decimal    @db.Decimal(24, 8)
+  stopLoss   Decimal?   @db.Decimal(24, 8)
+  takeProfit Decimal?   @db.Decimal(24, 8)
+  filled     Decimal    @default(0) @db.Decimal(24, 8)
   status    OrderStatus @default(OPEN)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt

@@ -44,6 +44,8 @@ const orderSchema = z.object({
   price: z.number().positive(),
   amount: z.number().positive(),
   leverage: z.number().int().min(1).max(125).optional(),
+  stopLoss: z.number().positive().optional(),
+  takeProfit: z.number().positive().optional(),
 });
 
 router.post('/orders', async (req, res) => {
@@ -53,7 +55,7 @@ router.post('/orders', async (req, res) => {
 
   const parsed = orderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
-  const { symbol, side, type, price, amount, leverage } = parsed.data;
+  const { symbol, side, type, price, amount, leverage, stopLoss, takeProfit } = parsed.data;
 
   const order = await prisma.order.create({
     data: {
@@ -65,6 +67,8 @@ router.post('/orders', async (req, res) => {
       leverage: leverage ?? 1,
       price,
       amount,
+      stopLoss,
+      takeProfit,
       // Market orders fill instantly in the demo engine.
       status: type === 'MARKET' ? 'FILLED' : 'OPEN',
       filled: type === 'MARKET' ? amount : 0,

@@ -39,11 +39,12 @@ interface OpenOrder {
 
 function TradingTerminal() {
   const params = useSearchParams();
-  const symbol = (params.get('symbol') || 'BTCUSDT').toUpperCase();
   const { tickers } = useTickers(5000);
   const { user } = useAuth();
   const { mode } = useMode();
   const isLive = mode === 'LIVE';
+
+  const [symbol, setSymbol] = useState((params.get('symbol') || 'BTCUSDT').toUpperCase());
   const ticker = tickers.find((t) => t.symbol === symbol);
 
   const [klines, setKlines] = useState<Kline[]>([]);
@@ -54,6 +55,9 @@ function TradingTerminal() {
   const [amount, setAmount] = useState('');
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
   const [limitPrice, setLimitPrice] = useState('');
+  const [stopLoss, setStopLoss] = useState('');
+  const [takeProfit, setTakeProfit] = useState('');
+  const [pairQuery, setPairQuery] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
 
@@ -97,6 +101,8 @@ function TradingTerminal() {
       setMsg('Enter a valid limit price.');
       return;
     }
+    const sl = parseFloat(stopLoss) || undefined;
+    const tp = parseFloat(takeProfit) || undefined;
     try {
       await api.post('/api/account/orders', {
         symbol,
@@ -105,15 +111,20 @@ function TradingTerminal() {
         price: limit,
         amount: amt,
         leverage: market === 'FUTURES' ? leverage : 1,
+        stopLoss: sl,
+        takeProfit: tp,
       });
       const lev = market === 'FUTURES' ? ` at ${leverage}x` : '';
       const dir = market === 'FUTURES' ? (side === 'BUY' ? 'LONG' : 'SHORT') : side;
+      const prot = sl || tp ? ` · SL ${sl ?? '—'} / TP ${tp ?? '—'}` : '';
       setMsg(
-        orderType === 'MARKET'
+        (orderType === 'MARKET'
           ? `✓ Simulated ${dir} order for ${amt} ${assetName(symbol)}${lev} filled at $${price.toLocaleString()}`
-          : `✓ ${dir} limit order placed for ${amt} ${assetName(symbol)}${lev} @ $${limit.toLocaleString()}`,
+          : `✓ ${dir} limit order placed for ${amt} ${assetName(symbol)}${lev} @ $${limit.toLocaleString()}`) + prot,
       );
       setAmount('');
+      setStopLoss('');
+      setTakeProfit('');
       loadOrders();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Order failed');
@@ -209,6 +220,45 @@ function TradingTerminal() {
           <RecentTrades price={price} symbol={symbol} />
         </div>
 
+        {/* Right column: pair selector + order ticket */}
+        <div className="space-y-4">
+        {/* Pair selector */}
+        <div className="card p-0">
+          <div className="border-b border-white/10 px-4 py-3">
+            <div className="mb-2 text-sm font-semibold text-white">Pairs</div>
+            <input
+              value={pairQuery}
+              onChange={(e) => setPairQuery(e.target.value)}
+              placeholder="Search…"
+              className="input py-1.5 text-xs"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {tickers
+              .filter((t) => assetName(t.symbol).toLowerCase().includes(pairQuery.toLowerCase()))
+              .map((t) => (
+                <button
+                  key={t.symbol}
+                  onClick={() => setSymbol(t.symbol)}
+                  className={cn(
+                    'flex w-full items-center justify-between px-4 py-2 text-left text-xs transition hover:bg-white/5',
+                    symbol === t.symbol && 'bg-white/5',
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="font-semibold text-white">{assetName(t.symbol)}</span>
+                    <span className="text-slate-500">/USDT</span>
+                  </span>
+                  <span className="text-right">
+                    <span className="block font-mono text-slate-300">${t.price.toLocaleString(undefined, { maximumFractionDigits: t.price < 2 ? 4 : 2 })}</span>
+                    <span className={cn('block font-mono', t.change >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{formatPercent(t.change)}</span>
+                  </span>
+                </button>
+              ))}
+            {tickers.length === 0 && <div className="px-4 py-6 text-center text-xs text-slate-500">Loading pairs…</div>}
+          </div>
+        </div>
+
         {/* Order ticket */}
         <div className="card p-5">
           {/* Spot / Futures */}
@@ -302,6 +352,30 @@ function TradingTerminal() {
             ≈ ${((parseFloat(amount) || 0) * (orderType === 'LIMIT' ? parseFloat(limitPrice) || price : price)).toLocaleString()} USDT
           </div>
 
+          {/* Stop Loss / Take Profit */}
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <div>
+              <label className="label text-red-400">Stop Loss</label>
+              <input
+                value={stopLoss}
+                onChange={(e) => setStopLoss(e.target.value)}
+                type="number"
+                placeholder="Price"
+                className="input py-2"
+              />
+            </div>
+            <div>
+              <label className="label text-brand-emerald">Take Profit</label>
+              <input
+                value={takeProfit}
+                onChange={(e) => setTakeProfit(e.target.value)}
+                type="number"
+                placeholder="Price"
+                className="input py-2"
+              />
+            </div>
+          </div>
+
           {market === 'FUTURES' && (() => {
             const notional = (parseFloat(amount) || 0) * price;
             const margin = notional / leverage;
@@ -339,6 +413,7 @@ function TradingTerminal() {
               Demo trading uses live prices with simulated fills.
             </p>
           )}
+        </div>
         </div>
       </div>
 

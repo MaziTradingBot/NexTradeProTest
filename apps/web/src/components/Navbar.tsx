@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Menu, X } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { ArrowLeft, Menu, X } from 'lucide-react';
 import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationBell } from './NotificationBell';
@@ -24,6 +25,15 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const { user, loadMe, logout } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const showBack = pathname !== '/';
+
+  const goBack = () => {
+    // Prefer real history; fall back to home if there's nowhere to go back to.
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back();
+    else router.push('/');
+  };
 
   useEffect(() => {
     loadMe();
@@ -41,9 +51,20 @@ export function Navbar() {
       )}
     >
       <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" aria-label="NexTradePro home">
-          <Logo />
-        </Link>
+        <div className="flex items-center gap-2">
+          {showBack && (
+            <button
+              onClick={goBack}
+              aria-label="Go back"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              <ArrowLeft size={17} />
+            </button>
+          )}
+          <Link href="/" aria-label="NexTradePro home">
+            <Logo />
+          </Link>
+        </div>
 
         <div className="hidden items-center gap-1 lg:flex">
           {NAV_LINKS.map((l) => (
