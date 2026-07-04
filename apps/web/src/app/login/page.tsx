@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { useAuth } from '@/lib/store';
 
@@ -37,6 +38,12 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
+      <Link
+        href="/"
+        className="fixed left-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white sm:left-6 sm:top-6"
+      >
+        <ArrowLeft size={16} /> Back to home
+      </Link>
       <div className="w-full max-w-md">
         <Link href="/" className="mb-8 flex justify-center">
           <Logo />
