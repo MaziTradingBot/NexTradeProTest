@@ -45,15 +45,11 @@ async function main() {
   const roleByKey = new Map((await prisma.role.findMany()).map((r) => [r.key, r]));
   const pw = await bcrypt.hash('Password123!', 12);
 
-  // 3. Demo users with assorted admin roles
+  // 3. Only the Super Admin is seeded. All other accounts (traders, brokers,
+  //    role-admins) are created by real registration and assigned roles by the
+  //    Super Admin — no fake/demo people are auto-generated.
   const demoUsers: { email: string; fullName: string; roleKeys: string[]; kyc?: boolean }[] = [
-    { email: 'super@nextradepro.com', fullName: 'Sofia Reyes', roleKeys: ['SUPER_ADMIN'] },
-    { email: 'general@nextradepro.com', fullName: 'Marcus Bell', roleKeys: ['GENERAL_ADMIN'] },
-    { email: 'withdrawals@nextradepro.com', fullName: 'Aisha Khan', roleKeys: ['WITHDRAWAL_ADMIN'] },
-    { email: 'kyc@nextradepro.com', fullName: 'Diego Santos', roleKeys: ['KYC_ADMIN'] },
-    { email: 'support@nextradepro.com', fullName: 'Lena Wagner', roleKeys: ['SUPPORT_ADMIN'] },
-    { email: 'broker@nextradepro.com', fullName: 'Priya Nair', roleKeys: ['BROKER'] },
-    { email: 'trader@nextradepro.com', fullName: 'Jordan Price', roleKeys: ['USER'], kyc: true },
+    { email: 'super@nextradepro.com', fullName: 'Super Admin', roleKeys: ['SUPER_ADMIN'] },
   ];
 
   for (const du of demoUsers) {
@@ -87,21 +83,8 @@ async function main() {
     }
   }
 
-  // 4. Some pending withdrawals + KYC for the admin queues
-  const trader = await prisma.user.findUnique({ where: { email: 'trader@nextradepro.com' } });
-  if (trader) {
-    const count = await prisma.transaction.count({ where: { userId: trader.id, type: 'WITHDRAWAL' } });
-    if (count === 0) {
-      await prisma.transaction.createMany({
-        data: [
-          { userId: trader.id, type: 'WITHDRAWAL', asset: 'USDT', amount: 1200, status: 'PENDING', reference: 'WD-1001' },
-          { userId: trader.id, type: 'WITHDRAWAL', asset: 'BTC', amount: 0.05, status: 'PENDING', reference: 'WD-1002' },
-          { userId: trader.id, type: 'DEPOSIT', asset: 'USDT', amount: 5000, status: 'COMPLETED', reference: 'DP-2001' },
-        ],
-      });
-    }
-    await prisma.user.update({ where: { id: trader.id }, data: { kycStatus: 'PENDING' } });
-  }
+  // (No fake transactions/KYC are seeded — the admin queues start empty and
+  //  fill from real user activity.)
 
   // 5. Sample announcements for the public news page
   const annCount = await prisma.announcement.count();
@@ -132,25 +115,13 @@ async function main() {
     });
   }
 
-  // 6. Referral codes + demo notifications for existing users
+  // 6. Ensure the super admin has a referral code
   const allUsers = await prisma.user.findMany({ select: { id: true, referralCode: true } });
   for (const u of allUsers) {
     if (!u.referralCode) {
       await prisma.user.update({
         where: { id: u.id },
         data: { referralCode: `NXP${u.id.slice(-6).toUpperCase()}` },
-      });
-    }
-  }
-  if (trader) {
-    const notifCount = await prisma.notification.count({ where: { userId: trader.id } });
-    if (notifCount === 0) {
-      await prisma.notification.createMany({
-        data: [
-          { userId: trader.id, title: 'Welcome to NexTradePro 🎉', body: 'Your demo account is ready.', type: 'SUCCESS' },
-          { userId: trader.id, title: 'BTC up 3.2% today', body: 'Bitcoin is leading the market higher.', type: 'TRADE' },
-          { userId: trader.id, title: 'Secure your account', body: 'Enable 2FA in Settings → Security.', type: 'WARNING' },
-        ],
       });
     }
   }
@@ -165,58 +136,6 @@ async function main() {
   ];
   for (const f of flags) {
     await prisma.featureFlag.upsert({ where: { key: f.key }, create: f, update: { label: f.label, description: f.description } });
-  }
-
-  // 7b. Broker + assigned demo clients
-  const broker = await prisma.user.findUnique({ where: { email: 'broker@nextradepro.com' } });
-  if (broker) {
-    // Assign the standard trader to this broker.
-    if (trader) await prisma.user.update({ where: { id: trader.id }, data: { brokerId: broker.id } });
-
-    const clientSeeds = [
-      { email: 'client1@nextradepro.com', fullName: 'Ethan Cole', usdt: 82000, kyc: 'APPROVED' as const },
-      { email: 'client2@nextradepro.com', fullName: 'Mia Fernandez', usdt: 45000, kyc: 'PENDING' as const },
-      { email: 'client3@nextradepro.com', fullName: 'Noah Weber', usdt: 128000, kyc: 'APPROVED' as const },
-      { email: 'client4@nextradepro.com', fullName: 'Ava Rossi', usdt: 23000, kyc: 'NONE' as const },
-    ];
-    for (const c of clientSeeds) {
-      const client = await prisma.user.upsert({
-        where: { email: c.email },
-        create: {
-          email: c.email,
-          passwordHash: pw,
-          fullName: c.fullName,
-          kycStatus: c.kyc,
-          brokerId: broker.id,
-          referralCode: `NXP${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-          roles: roleByKey.get('USER') ? { create: { roleId: roleByKey.get('USER')!.id } } : undefined,
-          wallets: {
-            create: [
-              { asset: 'USDT', mode: 'DEMO', balance: c.usdt },
-              { asset: 'BTC', mode: 'DEMO', balance: 0.8 },
-              { asset: 'ETH', mode: 'DEMO', balance: 10 },
-            ],
-          },
-        },
-        update: { brokerId: broker.id },
-      });
-      const orderCount = await prisma.order.count({ where: { userId: client.id } });
-      if (orderCount === 0) {
-        await prisma.order.createMany({
-          data: Array.from({ length: 5 }).map(() => ({
-            userId: client.id,
-            mode: 'DEMO' as const,
-            symbol: 'BTCUSDT',
-            side: (Math.random() > 0.5 ? 'BUY' : 'SELL') as 'BUY' | 'SELL',
-            type: 'MARKET' as const,
-            price: 67000,
-            amount: +(Math.random() * 0.5).toFixed(4),
-            filled: 1,
-            status: 'FILLED' as const,
-          })),
-        });
-      }
-    }
   }
 
   // 8. Demo deposit wallet addresses (per asset/network)

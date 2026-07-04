@@ -67,15 +67,22 @@ export function Navbar() {
         </div>
 
         <div className="hidden items-center gap-1 lg:flex">
-          {NAV_LINKS.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
-            >
-              {l.label}
-            </Link>
-          ))}
+          {NAV_LINKS.map((l) => {
+            const active = pathname === l.href;
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={cn(
+                  'relative rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  active ? 'text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white',
+                )}
+              >
+                {l.label}
+                {active && <span className="absolute inset-x-3 -bottom-0.5 h-0.5 rounded-full bg-brand-gradient" />}
+              </Link>
+            );
+          })}
         </div>
 
         <div className="hidden items-center gap-3 lg:flex">
@@ -134,7 +141,10 @@ export function Navbar() {
                 key={l.href}
                 href={l.href}
                 onClick={() => setOpen(false)}
-                className="block rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white"
+                className={cn(
+                  'block rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-white/5 hover:text-white',
+                  pathname === l.href ? 'bg-white/5 text-white' : 'text-slate-300',
+                )}
               >
                 {l.label}
               </Link>

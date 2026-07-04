@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Search, Shield, X, UserCog, Ban, CheckCircle2 } from 'lucide-react';
+import { Search, Shield, X, UserCog, Ban, CheckCircle2, Trash2, DollarSign } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -28,6 +28,7 @@ export default function AdminUsersPage() {
   const { user: me, hasPermission } = useAuth();
   const canAssign = me?.isSuperAdmin || hasPermission('roles.assign');
   const canManage = me?.isSuperAdmin || hasPermission('users.manage');
+  const canCredit = me?.isSuperAdmin || hasPermission('balances.manage');
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -81,6 +82,30 @@ export default function AdminUsersPage() {
       await api.patch(`/api/admin/users/${u.id}/status`, { status: next });
       showToast(`User ${next === 'ACTIVE' ? 'activated' : 'suspended'}`);
       await loadUsers(search);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const deleteUser = async (u: AdminUser) => {
+    if (!confirm(`Delete ${u.fullName} (${u.email})? This permanently removes the account and all its data.`)) return;
+    try {
+      await api.del(`/api/admin/users/${u.id}`);
+      showToast('User deleted');
+      await loadUsers(search);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const creditUser = async (u: AdminUser) => {
+    const input = prompt(`Add demo USDT to ${u.fullName}'s account:`, '10000');
+    if (input === null) return;
+    const amount = parseFloat(input);
+    if (!amount || amount <= 0) return showToast('Enter a valid amount');
+    try {
+      await api.post(`/api/admin/users/${u.id}/credit`, { asset: 'USDT', amount });
+      showToast(`Added ${amount.toLocaleString()} demo USDT to ${u.fullName}`);
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Failed');
     }
@@ -162,14 +187,24 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     <div className="flex justify-end gap-2">
+                      {canCredit && (
+                        <button onClick={() => creditUser(u)} title="Add demo funds" className="btn-ghost px-2.5 py-1.5 text-xs text-brand-emerald">
+                          <DollarSign size={14} />
+                        </button>
+                      )}
                       {canAssign && (
                         <button onClick={() => setSelected(u)} className="btn-ghost px-3 py-1.5 text-xs">
-                          <UserCog size={14} /> Manage roles
+                          <UserCog size={14} /> Roles
                         </button>
                       )}
                       {canManage && (
-                        <button onClick={() => toggleStatus(u)} className="btn-ghost px-3 py-1.5 text-xs">
+                        <button onClick={() => toggleStatus(u)} title={u.status === 'SUSPENDED' ? 'Activate' : 'Suspend'} className="btn-ghost px-2.5 py-1.5 text-xs">
                           {u.status === 'SUSPENDED' ? <CheckCircle2 size={14} /> : <Ban size={14} />}
+                        </button>
+                      )}
+                      {canManage && u.id !== me?.id && !u.roles.some((r) => r.key === 'SUPER_ADMIN') && (
+                        <button onClick={() => deleteUser(u)} title="Delete user" className="btn-ghost px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-500/10">
+                          <Trash2 size={14} />
                         </button>
                       )}
                     </div>

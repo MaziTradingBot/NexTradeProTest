@@ -60,6 +60,13 @@ function TradingTerminal() {
   const [pairQuery, setPairQuery] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
+  const [wallets, setWallets] = useState<{ asset: string; balance: string }[]>([]);
+
+  const loadWallets = () => {
+    if (!user) return;
+    api.get<{ asset: string; balance: string }[]>('/api/account/wallets').then(setWallets).catch(() => {});
+  };
+  useEffect(loadWallets, [user, mode]);
 
   useEffect(() => {
     api
@@ -148,6 +155,15 @@ function TradingTerminal() {
             <div className="text-xs text-slate-400">24h Change</div>
             <div className={cn('font-mono font-semibold', ticker.change >= 0 ? 'text-brand-emerald' : 'text-red-400')}>
               {formatPercent(ticker.change)}
+            </div>
+          </div>
+        )}
+        {user && (
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2">
+            <div className="text-xs text-slate-400">{mode === 'DEMO' ? 'Demo' : 'Live'} Balance</div>
+            <div className="font-mono text-lg font-semibold text-brand-emerald">
+              ${parseFloat(wallets.find((w) => w.asset === 'USDT')?.balance ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+              <span className="text-xs text-slate-400">USDT</span>
             </div>
           </div>
         )}
@@ -340,17 +356,36 @@ function TradingTerminal() {
             </>
           )}
 
-          <label className="label">Amount ({assetName(symbol)})</label>
-          <input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            type="number"
-            placeholder="0.00"
-            className="input mb-2"
-          />
-          <div className="mb-4 text-xs text-slate-500">
-            ≈ ${((parseFloat(amount) || 0) * (orderType === 'LIMIT' ? parseFloat(limitPrice) || price : price)).toLocaleString()} USDT
-          </div>
+          {(() => {
+            const quoteBal = parseFloat(wallets.find((w) => w.asset === 'USDT')?.balance ?? '0');
+            const baseBal = parseFloat(wallets.find((w) => w.asset === assetName(symbol))?.balance ?? '0');
+            const px = orderType === 'LIMIT' ? parseFloat(limitPrice) || price : price;
+            const avail = side === 'BUY' ? quoteBal : baseBal;
+            const availLabel = side === 'BUY' ? 'USDT' : assetName(symbol);
+            const setPct = (pct: number) => {
+              const maxAmt = side === 'BUY' ? (px ? (quoteBal * pct) / px : 0) : baseBal * pct;
+              setAmount(maxAmt > 0 ? maxAmt.toFixed(6) : '');
+            };
+            return (
+              <>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="label mb-0">Amount ({assetName(symbol)})</label>
+                  <span className="text-xs text-slate-400">
+                    Avail: <span className="font-mono text-white">{avail.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span> {availLabel}
+                  </span>
+                </div>
+                <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" placeholder="0.00" className="input mb-2" />
+                <div className="mb-2 grid grid-cols-4 gap-1.5">
+                  {[0.25, 0.5, 0.75, 1].map((p) => (
+                    <button key={p} onClick={() => setPct(p)} className="rounded-lg bg-white/5 py-1 text-[11px] font-medium text-slate-300 transition hover:bg-white/10">
+                      {p * 100}%
+                    </button>
+                  ))}
+                </div>
+                <div className="mb-4 text-xs text-slate-500">≈ ${((parseFloat(amount) || 0) * px).toLocaleString()} USDT</div>
+              </>
+            );
+          })()}
 
           {/* Stop Loss / Take Profit */}
           <div className="mb-4 grid grid-cols-2 gap-2">

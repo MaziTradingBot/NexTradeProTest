@@ -7,12 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { useAuth } from '@/lib/store';
 
-const DEMO_ACCOUNTS = [
-  ['Super Admin', 'super@nextradepro.com'],
-  ['Withdrawal Admin', 'withdrawals@nextradepro.com'],
-  ['Broker', 'broker@nextradepro.com'],
-  ['Trader', 'trader@nextradepro.com'],
-];
+const DEMO_ACCOUNTS = [['Super Admin', 'super@nextradepro.com']];
 
 export default function LoginPage() {
   const router = useRouter();

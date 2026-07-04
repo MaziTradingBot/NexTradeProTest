@@ -167,6 +167,29 @@ router.post('/deposit', async (req, res) => {
   res.status(201).json(txn);
 });
 
+// POST /api/account/request-demo-funds — user asks an admin to top up demo balance
+router.post('/request-demo-funds', async (req, res) => {
+  const parsed = z.object({ amount: z.number().positive().max(1000000) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid amount' });
+  const txn = await prisma.transaction.create({
+    data: {
+      userId: req.user!.id,
+      mode: 'DEMO',
+      type: 'DEPOSIT',
+      asset: 'USDT',
+      amount: parsed.data.amount,
+      status: 'PENDING',
+      reference: `REQ-${Date.now()}`,
+      note: 'Demo balance top-up request',
+    },
+  });
+  await prisma.notification.create({
+    data: { userId: req.user!.id, title: 'Top-up request submitted', body: `Your request for ${parsed.data.amount} demo USDT is pending admin approval.`, type: 'INFO' },
+  });
+  await audit({ actorId: req.user!.id, action: 'demo.topup.request', target: txn.id, ip: req.ip });
+  res.status(201).json({ ok: true });
+});
+
 // GET /api/account/deposit-addresses — public demo deposit addresses per asset
 router.get('/deposit-addresses', async (_req, res) => {
   try {

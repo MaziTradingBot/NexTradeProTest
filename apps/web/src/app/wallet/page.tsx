@@ -62,6 +62,20 @@ function WalletInner() {
     }
   };
 
+  const requestTopUp = async () => {
+    const input = prompt('Request a demo balance top-up (USDT). An admin will review it:', '10000');
+    if (input === null) return;
+    const amt = parseFloat(input);
+    if (!amt || amt <= 0) return setMsg('Enter a valid amount.');
+    try {
+      await api.post('/api/account/request-demo-funds', { amount: amt });
+      setMsg(`✓ Requested ${amt.toLocaleString()} demo USDT — pending admin approval.`);
+      load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed');
+    }
+  };
+
   const filtered = txns.filter((t) => filter === 'ALL' || t.type === filter);
 
   return (
@@ -137,9 +151,14 @@ function WalletInner() {
               {tab === 'DEPOSIT' ? 'Demo deposits are credited instantly.' : 'Withdrawals require admin approval.'}
             </p>
             {tab === 'DEPOSIT' && (
-              <a href="/deposit" className="block text-center text-xs font-medium text-brand-blue hover:underline">
-                Or deposit via wallet address + QR →
-              </a>
+              <>
+                <a href="/deposit" className="block text-center text-xs font-medium text-brand-blue hover:underline">
+                  Or deposit via wallet address + QR →
+                </a>
+                <button type="button" onClick={requestTopUp} className="btn-ghost mt-1 w-full text-xs">
+                  Request demo top-up (admin approval)
+                </button>
+              </>
             )}
           </form>
         </div>

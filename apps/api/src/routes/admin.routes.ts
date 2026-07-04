@@ -208,6 +208,40 @@ router.patch('/users/:id/status', requirePermission('users.manage'), async (req,
   res.json({ ok: true });
 });
 
+// DELETE /api/admin/users/:id — permanently remove a user
+router.delete('/users/:id', requirePermission('users.manage'), async (req, res) => {
+  if (req.params.id === req.user!.id) return res.status(400).json({ error: 'You cannot delete your own account' });
+  const target = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    include: { roles: { include: { role: true } } },
+  });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  const isSuper = target.roles.some((r) => r.role.key === 'SUPER_ADMIN');
+  if (isSuper && !req.user!.isSuperAdmin) {
+    return res.status(403).json({ error: 'Only a Super Admin can delete a Super Admin' });
+  }
+  await prisma.user.delete({ where: { id: req.params.id } });
+  await audit({ actorId: req.user!.id, action: 'user.delete', target: req.params.id, meta: { email: target.email }, ip: req.ip });
+  res.json({ ok: true });
+});
+
+// POST /api/admin/users/:id/credit — quick demo-balance top-up for a user
+router.post('/users/:id/credit', requirePermission('balances.manage'), async (req, res) => {
+  const parsed = z.object({ asset: z.string().min(2).default('USDT'), amount: z.number().positive() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid amount' });
+  const { asset, amount } = parsed.data;
+  const wallet = await prisma.wallet.upsert({
+    where: { userId_asset_mode: { userId: req.params.id, asset, mode: 'DEMO' } },
+    create: { userId: req.params.id, asset, mode: 'DEMO', balance: amount },
+    update: { balance: { increment: amount } },
+  });
+  await prisma.notification.create({
+    data: { userId: req.params.id, title: 'Demo balance credited', body: `${amount} ${asset} was added to your demo wallet by an administrator.`, type: 'SUCCESS' },
+  });
+  await audit({ actorId: req.user!.id, action: 'balance.credit', target: req.params.id, meta: { asset, amount }, ip: req.ip });
+  res.json({ ok: true, wallet });
+});
+
 // ---------------------------------------------------------------------------
 // Withdrawals — the "Withdrawal Approval Admin" workflow
 // ---------------------------------------------------------------------------
@@ -262,6 +296,34 @@ router.get('/deposits', requirePermission('deposits.view'), async (_req, res) =>
     include: { user: { select: { email: true, fullName: true } } },
   });
   res.json(deposits);
+});
+
+// POST /api/admin/deposits/:id/review — approve/reject a pending deposit request.
+// Approving credits the user's wallet (in the deposit's mode).
+router.post('/deposits/:id/review', requirePermission('deposits.manage'), async (req, res) => {
+  const parsed = z.object({ decision: z.enum(['APPROVED', 'REJECTED']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid decision' });
+
+  const txn = await prisma.transaction.findUnique({ where: { id: req.params.id } });
+  if (!txn || txn.type !== 'DEPOSIT') return res.status(404).json({ error: 'Deposit not found' });
+  if (txn.status !== 'PENDING') return res.status(409).json({ error: 'Already reviewed' });
+
+  if (parsed.data.decision === 'APPROVED') {
+    await prisma.$transaction([
+      prisma.transaction.update({ where: { id: txn.id }, data: { status: 'COMPLETED', reviewedById: req.user!.id, reviewedAt: new Date() } }),
+      prisma.wallet.upsert({
+        where: { userId_asset_mode: { userId: txn.userId, asset: txn.asset, mode: txn.mode } },
+        create: { userId: txn.userId, asset: txn.asset, mode: txn.mode, balance: txn.amount },
+        update: { balance: { increment: txn.amount } },
+      }),
+      prisma.notification.create({ data: { userId: txn.userId, title: 'Deposit approved', body: `Your ${txn.amount} ${txn.asset} deposit was approved and credited.`, type: 'SUCCESS' } }),
+    ]);
+  } else {
+    await prisma.transaction.update({ where: { id: txn.id }, data: { status: 'REJECTED', reviewedById: req.user!.id, reviewedAt: new Date() } });
+    await prisma.notification.create({ data: { userId: txn.userId, title: 'Deposit rejected', body: `Your ${txn.amount} ${txn.asset} deposit request was rejected.`, type: 'WARNING' } });
+  }
+  await audit({ actorId: req.user!.id, action: `deposit.${parsed.data.decision.toLowerCase()}`, target: txn.id, ip: req.ip });
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
