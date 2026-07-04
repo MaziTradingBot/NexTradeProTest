@@ -13,6 +13,7 @@ import {
 import { Navbar } from '@/components/Navbar';
 import { OrderBook } from '@/components/OrderBook';
 import { RecentTrades } from '@/components/RecentTrades';
+import TradingViewChart from '@/components/TradingViewChart';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useMode } from '@/lib/useMode';
@@ -46,6 +47,7 @@ function TradingTerminal() {
   const ticker = tickers.find((t) => t.symbol === symbol);
 
   const [klines, setKlines] = useState<Kline[]>([]);
+  const [chartSource, setChartSource] = useState<'TRADINGVIEW' | 'BASIC'>('TRADINGVIEW');
   const [market, setMarket] = useState<'SPOT' | 'FUTURES'>('SPOT');
   const [leverage, setLeverage] = useState(10);
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
@@ -159,8 +161,24 @@ function TradingTerminal() {
       <div className="grid gap-4 lg:grid-cols-[1fr_240px_300px]">
         {/* Chart */}
         <div className="card p-4">
-          <div className="h-[420px] w-full">
-            {klines.length > 0 ? (
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-sm font-semibold text-white">Chart</span>
+            <div className="ml-auto inline-flex rounded-lg border border-white/10 bg-black/20 p-0.5 text-xs">
+              {(['TRADINGVIEW', 'BASIC'] as const).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setChartSource(c)}
+                  className={cn('rounded-md px-2.5 py-1 font-semibold transition', chartSource === c ? 'bg-white/10 text-white' : 'text-slate-400')}
+                >
+                  {c === 'TRADINGVIEW' ? 'TradingView' : 'Basic'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="h-[440px] w-full overflow-hidden rounded-xl">
+            {chartSource === 'TRADINGVIEW' ? (
+              <TradingViewChart symbol={symbol} />
+            ) : klines.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={klines}>
                   <defs>
