@@ -15,5 +15,6 @@ RUN npm run build
 
 ENV NODE_ENV=production
 EXPOSE 4000
-# Sync schema + seed (idempotent) on boot, then start the API.
-CMD ["sh", "-c", "npx prisma db push && (npm run seed || echo seed-skipped) && node dist/server.js"]
+# Sync schema (--accept-data-loss) + seed on boot; both non-fatal so the API
+# always starts, then run the server.
+CMD ["sh", "-c", "(npx prisma db push --accept-data-loss || echo push-skipped) && (npm run seed || echo seed-skipped) && node dist/server.js"]

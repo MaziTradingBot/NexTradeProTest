@@ -9,9 +9,10 @@ services:
     # --include=dev is required because NODE_ENV=production makes npm skip
     # devDependencies (prisma, typescript, tsx) that the build/seed need.
     buildCommand: npm install --include=dev && npm run build
-    # On boot: sync schema (no migration files needed) + seed roles/permissions/
-    # demo data (idempotent). Seed failure is tolerated so the API still starts.
-    startCommand: npx prisma db push && (npm run seed || echo seed-skipped) && npm run start
+    # On boot: sync schema (--accept-data-loss lets destructive schema changes,
+    # e.g. new unique constraints, apply on an existing demo DB) + seed. Both are
+    # made non-fatal so the API ALWAYS starts even if a step hiccups.
+    startCommand: (npx prisma db push --accept-data-loss || echo push-skipped) && (npm run seed || echo seed-skipped) && npm run start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
