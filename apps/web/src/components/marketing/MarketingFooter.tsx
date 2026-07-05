@@ -1,0 +1,44 @@
+import Link from 'next/link';
+
+const COLUMNS = [
+  { title: 'Platform', links: [['Markets', '/markets'], ['Copy Trading', '/copy-trading'], ['AI Assistant', '/ai'], ['Calculators', '/tools']] },
+  { title: 'Learn', links: [['Academy', '/academy'], ['News', '/news'], ['Economic Calendar', '/calendar'], ['Pricing', '/pricing']] },
+  { title: 'Company', links: [['About', '/about'], ['Careers', '/about'], ['Partners', '/about'], ['Contact', '/about']] },
+  { title: 'Legal', links: [['Terms', '/about'], ['Privacy', '/about'], ['Risk Disclosure', '/about'], ['Cookies', '/about']] },
+];
+
+export function MarketingFooter() {
+  return (
+    <footer className="border-t border-[#e7ecf5] bg-[#f7f9fc]">
+      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-2 gap-8 md:grid-cols-6">
+          <div className="col-span-2">
+            <span className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1a56ff] text-base font-black text-white">N</span>
+              <span className="text-lg font-bold tracking-tight text-[#0a1633]">NexTrade<span className="text-[#1a56ff]">Pro</span></span>
+            </span>
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-[#5b6b8c]">
+              An institutional-grade crypto trading platform with live market data and clearly labeled simulated execution.
+            </p>
+          </div>
+          {COLUMNS.map((col) => (
+            <div key={col.title}>
+              <h4 className="mb-3 text-sm font-semibold text-[#0a1633]">{col.title}</h4>
+              <ul className="space-y-2.5">
+                {col.links.map(([label, href]) => (
+                  <li key={label}>
+                    <Link href={href} className="text-sm text-[#5b6b8c] transition-colors hover:text-[#1a56ff]">{label}</Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-[#e7ecf5] pt-6 sm:flex-row">
+          <p className="text-xs text-[#8593ad]">© {new Date().getFullYear()} NexTradePro. Demo platform — not financial advice.</p>
+          <p className="text-xs text-[#8593ad]">Live prices via public market data. Trading is simulated for demonstration.</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
