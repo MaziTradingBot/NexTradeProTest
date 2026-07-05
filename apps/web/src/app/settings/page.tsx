@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Copy, KeyRound, ShieldCheck, Trash2, User } from 'lucide-react';
+import { Copy, KeyRound, Lock, ShieldCheck, Trash2, User } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { QrCode } from '@/components/QrCode';
@@ -23,6 +23,8 @@ function SettingsInner() {
   const [setup, setSetup] = useState<{ secret: string; otpauth: string } | null>(null);
   const [code, setCode] = useState('');
   const [twoFaError, setTwoFaError] = useState<string | null>(null);
+  const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
+  const [pwError, setPwError] = useState<string | null>(null);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [newLabel, setNewLabel] = useState('');
   const [newSecret, setNewSecret] = useState<string | null>(null);
@@ -43,6 +45,19 @@ function SettingsInner() {
     await api.patch('/api/account/profile', { fullName });
     await loadMe();
     flash('Profile updated');
+  };
+
+  const changePassword = async () => {
+    setPwError(null);
+    if (pw.next.length < 8) return setPwError('New password must be at least 8 characters.');
+    if (pw.next !== pw.confirm) return setPwError('New passwords do not match.');
+    try {
+      await api.post('/api/account/change-password', { currentPassword: pw.current, newPassword: pw.next });
+      setPw({ current: '', next: '', confirm: '' });
+      flash('Password changed');
+    } catch (e) {
+      setPwError(e instanceof Error ? e.message : 'Failed');
+    }
   };
 
   const startSetup = async () => {
@@ -112,6 +127,32 @@ function SettingsInner() {
         </div>
         <button onClick={saveProfile} className="btn-primary mt-4">
           Save changes
+        </button>
+      </div>
+
+      {/* Change password */}
+      <div className="card mt-6">
+        <div className="mb-4 flex items-center gap-2">
+          <Lock size={18} className="text-brand-gold" />
+          <h2 className="font-semibold text-white">Change password</h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label className="block">
+            <span className="label">Current password</span>
+            <input type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} className="input" />
+          </label>
+          <label className="block">
+            <span className="label">New password</span>
+            <input type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} className="input" placeholder="At least 8 characters" />
+          </label>
+          <label className="block">
+            <span className="label">Confirm new password</span>
+            <input type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} className="input" />
+          </label>
+        </div>
+        {pwError && <p className="mt-3 text-sm text-red-400">{pwError}</p>}
+        <button onClick={changePassword} disabled={!pw.current || !pw.next} className="btn-primary mt-4">
+          Update password
         </button>
       </div>
 

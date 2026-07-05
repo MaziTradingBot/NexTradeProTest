@@ -290,17 +290,20 @@ model PlatformSetting {
 }
 
 model KycSubmission {
-  id        String    @id @default(cuid())
-  userId    String
-  fullName  String
-  country   String
-  idType    String // PASSPORT, NATIONAL_ID, DRIVERS_LICENSE
-  idNumber  String
-  dob       String
-  status    KycStatus @default(PENDING)
-  createdAt DateTime  @default(now())
+  id           String    @id @default(cuid())
+  userId       String
+  fullName     String
+  country      String
+  idType       String // PASSPORT, NATIONAL_ID, DRIVERS_LICENSE
+  idNumber     String
+  dob          String
+  documentName String?
+  documentType String? // image/png, image/jpeg, application/pdf ...
+  documentData String? @db.Text // base64 data URL of the uploaded ID
+  status       KycStatus @default(PENDING)
+  createdAt    DateTime  @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])

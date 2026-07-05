@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
 import { audit } from '../lib/audit';
 import { generateBase32Secret, otpauthUri, verifyTotp } from '../lib/totp';
+import { hashPassword, verifyPassword } from '../lib/auth';
 
 const router = Router();
 router.use(authenticate);
@@ -278,6 +279,10 @@ router.post('/kyc', async (req, res) => {
     idType: z.enum(['PASSPORT', 'NATIONAL_ID', 'DRIVERS_LICENSE']),
     idNumber: z.string().min(3),
     dob: z.string().min(4),
+    documentName: z.string().optional(),
+    documentType: z.string().optional(),
+    // base64 data URL, capped so the request stays reasonable (~4MB of base64).
+    documentData: z.string().max(5_600_000).optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
@@ -288,6 +293,21 @@ router.post('/kyc', async (req, res) => {
   ]);
   await audit({ actorId: req.user!.id, action: 'kyc.submit', target: req.user!.id, ip: req.ip });
   res.status(201).json({ ok: true, status: 'PENDING' });
+});
+
+// POST /api/account/change-password
+router.post('/change-password', async (req, res) => {
+  const schema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8, 'New password must be at least 8 characters') });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { passwordHash: true } });
+  if (!user || !(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
+    return res.status(400).json({ error: 'Current password is incorrect' });
+  }
+  await prisma.user.update({ where: { id: req.user!.id }, data: { passwordHash: await hashPassword(parsed.data.newPassword) } });
+  await audit({ actorId: req.user!.id, action: 'password.change', target: req.user!.id, ip: req.ip });
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------

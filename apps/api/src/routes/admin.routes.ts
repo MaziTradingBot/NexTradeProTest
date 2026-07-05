@@ -416,9 +416,20 @@ router.delete('/announcements/:id', requirePermission('content.manage'), async (
 router.get('/kyc', requirePermission('kyc.view'), async (_req, res) => {
   const pending = await prisma.user.findMany({
     where: { kycStatus: 'PENDING' },
-    select: { id: true, email: true, fullName: true, createdAt: true },
+    select: {
+      id: true, email: true, fullName: true, createdAt: true,
+      kycSubmissions: { orderBy: { createdAt: 'desc' }, take: 1 },
+    },
   });
-  res.json(pending);
+  res.json(
+    pending.map((u) => ({
+      id: u.id,
+      email: u.email,
+      fullName: u.fullName,
+      createdAt: u.createdAt,
+      submission: u.kycSubmissions[0] ?? null,
+    })),
+  );
 });
 
 router.post('/kyc/:id/review', requirePermission('kyc.approve'), async (req, res) => {
