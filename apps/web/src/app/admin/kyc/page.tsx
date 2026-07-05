@@ -25,6 +25,17 @@ interface KycRow {
   createdAt: string;
   submission: Submission | null;
 }
+interface PoaRow {
+  id: string;
+  docType: string;
+  issuedDate: string | null;
+  documentName: string | null;
+  documentType: string | null;
+  documentData: string | null;
+  status: string;
+  createdAt: string;
+  user: { email: string; fullName: string };
+}
 
 export default function AdminKycPage() {
   const { user, hasPermission } = useAuth();
@@ -32,6 +43,9 @@ export default function AdminKycPage() {
   const [rows, setRows] = useState<KycRow[]>([]);
   const [sel, setSel] = useState<KycRow | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [poa, setPoa] = useState<PoaRow[]>([]);
+
+  const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
   const load = useCallback(async () => {
     try {
@@ -39,10 +53,21 @@ export default function AdminKycPage() {
     } catch {
       setRows([]);
     }
+    api.get<PoaRow[]>('/api/admin/poa').then(setPoa).catch(() => setPoa([]));
   }, []);
   useEffect(() => {
     load();
   }, [load]);
+
+  const reviewPoa = async (id: string, decision: 'APPROVED' | 'REJECTED' | 'RESUBMIT') => {
+    try {
+      await api.post(`/api/admin/poa/${id}/review`, { decision });
+      flash(`Proof of address ${decision.toLowerCase()}`);
+      load();
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Failed');
+    }
+  };
 
   const review = async (id: string, decision: 'APPROVED' | 'REJECTED') => {
     try {
@@ -95,6 +120,49 @@ export default function AdminKycPage() {
             {rows.length === 0 && (
               <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-500">No pending KYC submissions.</td></tr>
             )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Proof of Address queue */}
+      <h2 className="mt-8 text-lg font-bold text-white">Proof of Address</h2>
+      <p className="mt-1 text-sm text-slate-400">Review address documents for high-value accounts.</p>
+      <div className="card mt-4 overflow-hidden p-0">
+        <table className="w-full text-sm">
+          <thead className="border-b border-white/10 text-left text-xs uppercase text-slate-500">
+            <tr>
+              <th className="px-5 py-3">Applicant</th>
+              <th className="px-5 py-3">Type</th>
+              <th className="px-5 py-3">Issued</th>
+              <th className="px-5 py-3">Document</th>
+              <th className="px-5 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {poa.map((p) => (
+              <tr key={p.id}>
+                <td className="px-5 py-3.5"><div className="font-medium text-white">{p.user.fullName}</div><div className="text-xs text-slate-500">{p.user.email}</div></td>
+                <td className="px-5 py-3.5 text-slate-300">{p.docType.replace(/_/g, ' ').toLowerCase()}</td>
+                <td className="px-5 py-3.5 text-slate-400">{p.issuedDate ?? '—'}</td>
+                <td className="px-5 py-3.5">
+                  {p.documentData ? (
+                    <a href={p.documentData} target="_blank" rel="noreferrer" download={p.documentName ?? 'proof'} className="inline-flex items-center gap-1.5 text-xs text-brand-blue hover:underline"><FileText size={13} /> {p.documentName ?? 'Open'}</a>
+                  ) : (
+                    <span className="text-xs text-slate-500">—</span>
+                  )}
+                </td>
+                <td className="px-5 py-3.5">
+                  {canApprove && (
+                    <div className="flex justify-end gap-1.5">
+                      <button onClick={() => reviewPoa(p.id, 'APPROVED')} className="rounded-lg bg-brand-emerald/15 px-2.5 py-1 text-xs font-semibold text-brand-emerald hover:bg-brand-emerald/25">Approve</button>
+                      <button onClick={() => reviewPoa(p.id, 'RESUBMIT')} className="rounded-lg bg-brand-gold/15 px-2.5 py-1 text-xs font-semibold text-brand-gold hover:bg-brand-gold/25">Resubmit</button>
+                      <button onClick={() => reviewPoa(p.id, 'REJECTED')} className="rounded-lg bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/25">Reject</button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {poa.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-500">No pending proof-of-address submissions.</td></tr>}
           </tbody>
         </table>
       </div>

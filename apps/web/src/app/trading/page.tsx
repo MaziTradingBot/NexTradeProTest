@@ -53,6 +53,8 @@ function TradingTerminal() {
 
   const [symbol, setSymbol] = useState((params.get('symbol') || 'BTCUSDT').toUpperCase());
   const ticker = tickers.find((t) => t.symbol === symbol);
+  const copyFrom = params.get('copyFrom');
+  const [copyPrefilled, setCopyPrefilled] = useState(false);
 
   const [klines, setKlines] = useState<Kline[]>([]);
   const [chartSource, setChartSource] = useState<'TRADINGVIEW' | 'BASIC'>('TRADINGVIEW');
@@ -115,6 +117,33 @@ function TradingTerminal() {
   // are re-valued on every tick, so the account metrics update in real time.
   const priceOf = (sym: string) => tickers.find((t) => t.symbol === sym.toUpperCase())?.price ?? 0;
   const metrics = summary ? liveMetrics(summary, priceOf) : null;
+
+  // Copy-trading: pre-fill the order ticket from the trader's suggested setup.
+  // The user still reviews and confirms — nothing is submitted automatically.
+  useEffect(() => {
+    if (!copyFrom) return;
+    const s = params.get('side');
+    if (s === 'BUY' || s === 'SELL') setSide(s);
+    const lev = parseInt(params.get('leverage') || '', 10);
+    if (lev) {
+      setMarket('FUTURES');
+      setLeverage(Math.min(125, Math.max(1, lev)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copyFrom]);
+
+  useEffect(() => {
+    if (!copyFrom || copyPrefilled || !price) return;
+    const isLong = (params.get('side') ?? 'BUY') !== 'SELL';
+    setStopLoss((isLong ? price * 0.97 : price * 1.03).toFixed(price < 2 ? 4 : 2));
+    setTakeProfit((isLong ? price * 1.06 : price * 0.94).toFixed(price < 2 ? 4 : 2));
+    const lev = parseInt(params.get('leverage') || '10', 10) || 10;
+    const free = metrics?.freeMargin ?? 1000;
+    const suggested = (free * 0.1 * lev) / price; // ~10% of free margin as notional
+    if (suggested > 0) setAmount(suggested.toFixed(6));
+    setCopyPrefilled(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copyFrom, price, copyPrefilled, metrics]);
   const marginWarning =
     summary && metrics?.marginLevel != null && metrics.marginLevel <= summary.marginCallLevel;
   const stopOutClose =
@@ -233,6 +262,20 @@ function TradingTerminal() {
           {isLive ? 'Live Mode' : 'Simulated execution'}
         </span>
       </div>
+
+      {copyFrom && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/10 px-4 py-3 text-sm text-ink-soft">
+          <span className="mt-0.5">📋</span>
+          <div>
+            <div className="font-semibold text-ink">Copying {copyFrom}</div>
+            <p className="mt-0.5">
+              We&apos;ve pre-filled a suggested {side === 'BUY' ? 'long' : 'short'} order on {assetName(symbol)} — review the
+              size, leverage, stop-loss and take-profit below, adjust anything you like, then confirm to place it. Nothing is
+              submitted automatically.
+            </p>
+          </div>
+        </div>
+      )}
 
       {tradingLocked && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-brand-blue/25 bg-brand-blue/10 px-4 py-3 text-sm text-ink-soft">

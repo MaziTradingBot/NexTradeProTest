@@ -11,12 +11,24 @@ import { cn } from '@/lib/utils';
 interface KycState {
   status: string;
   submission: { fullName: string; country: string; idType: string; createdAt: string } | null;
+  poaStatus: string;
+  poaSubmission: { docType: string; issuedDate: string | null; status: string; createdAt: string } | null;
+  poaRequired: boolean;
+  poaThreshold: number;
+  depositsTotal: number;
 }
 
 const ID_TYPES = [
   { key: 'PASSPORT', label: 'Passport' },
   { key: 'NATIONAL_ID', label: 'National ID' },
   { key: 'DRIVERS_LICENSE', label: "Driver's License" },
+];
+
+const POA_TYPES = [
+  { key: 'UTILITY_BILL', label: 'Utility Bill' },
+  { key: 'BANK_STATEMENT', label: 'Bank Statement' },
+  { key: 'GOVERNMENT_LETTER', label: 'Government Letter' },
+  { key: 'TAX_DOCUMENT', label: 'Tax Document' },
 ];
 
 function KycInner() {
@@ -26,6 +38,35 @@ function KycInner() {
   const [doc, setDoc] = useState<{ name: string; type: string; data: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [poaType, setPoaType] = useState('UTILITY_BILL');
+  const [poaIssued, setPoaIssued] = useState('');
+  const [poaDoc, setPoaDoc] = useState<{ name: string; type: string; data: string } | null>(null);
+  const [poaError, setPoaError] = useState<string | null>(null);
+  const [poaSubmitting, setPoaSubmitting] = useState(false);
+
+  const readFile = (file: File | undefined, set: (d: { name: string; type: string; data: string }) => void, onErr: (m: string) => void) => {
+    if (!file) return;
+    if (!(file.type.startsWith('image/') || file.type === 'application/pdf')) return onErr('Please upload an image (PNG, JPG…) or a PDF.');
+    if (file.size > 4 * 1024 * 1024) return onErr('File is too large — max 4MB.');
+    const reader = new FileReader();
+    reader.onload = () => set({ name: file.name, type: file.type, data: reader.result as string });
+    reader.readAsDataURL(file);
+  };
+
+  const submitPoa = async () => {
+    setPoaError(null);
+    if (!poaDoc) return setPoaError('Please upload your proof-of-address document.');
+    setPoaSubmitting(true);
+    try {
+      await api.post('/api/account/poa', { docType: poaType, issuedDate: poaIssued || undefined, documentName: poaDoc.name, documentType: poaDoc.type, documentData: poaDoc.data });
+      await load();
+      await loadMe();
+    } catch (err) {
+      setPoaError(err instanceof Error ? err.message : 'Submission failed');
+    } finally {
+      setPoaSubmitting(false);
+    }
+  };
 
   const onFile = (file: File | undefined) => {
     setError(null);
@@ -199,6 +240,89 @@ function KycInner() {
             </dl>
           </div>
         ) : null}
+
+        {/* Proof of Address — second verification stage */}
+        {(() => {
+          const poaStatus = state?.poaStatus ?? 'NONE';
+          const required = !!state?.poaRequired;
+          const showPoaForm = poaStatus === 'NONE' || poaStatus === 'REJECTED';
+          // Only surface POA once it's required (high-value deposits) or already started.
+          if (!required && poaStatus === 'NONE') return null;
+          return (
+            <div className="card">
+              <div className="mb-1 flex items-center justify-between">
+                <h2 className="font-semibold text-white">Proof of Address</h2>
+                <span
+                  className={cn(
+                    'badge',
+                    poaStatus === 'APPROVED' ? 'bg-brand-emerald/15 text-brand-emerald' : poaStatus === 'PENDING' ? 'bg-brand-gold/15 text-brand-gold' : poaStatus === 'REJECTED' ? 'bg-red-500/15 text-red-400' : 'bg-white/5 text-slate-400',
+                  )}
+                >
+                  {poaStatus === 'NONE' ? 'Required' : poaStatus.charAt(0) + poaStatus.slice(1).toLowerCase()}
+                </span>
+              </div>
+              <p className="mb-4 text-sm text-slate-400">
+                {required
+                  ? `Your deposits have reached the $${(state?.poaThreshold ?? 5000).toLocaleString()} compliance threshold, so a proof of address is required. `
+                  : ''}
+                Upload a document issued in the last 3 months that shows your name and registered address.
+              </p>
+
+              {poaStatus === 'PENDING' ? (
+                <div className="rounded-xl bg-white/5 px-4 py-3 text-sm text-slate-300">
+                  Your {state?.poaSubmission?.docType.replace(/_/g, ' ').toLowerCase()} is under review by a compliance admin.
+                </div>
+              ) : poaStatus === 'APPROVED' ? (
+                <div className="rounded-xl bg-brand-emerald/10 px-4 py-3 text-sm text-slate-300">Your address has been verified.</div>
+              ) : showPoaForm ? (
+                <div className="space-y-4">
+                  <div>
+                    <span className="label">Document type</span>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {POA_TYPES.map((t) => (
+                        <button key={t.key} type="button" onClick={() => setPoaType(t.key)} className={cn('rounded-xl py-2 text-xs font-semibold transition', poaType === t.key ? 'bg-brand-gradient text-white' : 'bg-white/5 text-slate-400')}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="block">
+                    <span className="label">Issue date <span className="text-ink-muted">(must be within 3 months)</span></span>
+                    <input type="date" value={poaIssued} onChange={(e) => setPoaIssued(e.target.value)} className="input" />
+                  </label>
+                  <div>
+                    <span className="label">Document</span>
+                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/5 px-4 py-8 text-center transition hover:border-brand-blue/50 hover:bg-white/[0.07]">
+                      <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => readFile(e.target.files?.[0], setPoaDoc, setPoaError)} />
+                      {poaDoc ? (
+                        <div className="w-full">
+                          {poaDoc.type.startsWith('image/') ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={poaDoc.data} alt="Proof preview" className="mx-auto max-h-40 rounded-lg" />
+                          ) : (
+                            <FileText className="mx-auto mb-2 text-brand-blue" size={32} />
+                          )}
+                          <div className="mt-2 truncate text-sm font-medium text-white">{poaDoc.name}</div>
+                          <div className="text-xs text-brand-emerald">Ready to submit · click to replace</div>
+                        </div>
+                      ) : (
+                        <>
+                          <UploadCloud className="mb-2 text-slate-500" />
+                          <div className="text-sm text-slate-300">Click to upload a utility bill, bank statement, etc.</div>
+                          <div className="text-xs text-slate-500">PNG, JPG or PDF · max 4MB</div>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                  {poaError && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">{poaError}</p>}
+                  <button onClick={submitPoa} disabled={poaSubmitting} className="btn-primary w-full">
+                    {poaSubmitting ? 'Submitting…' : 'Submit proof of address'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })()}
       </div>
       <div className="h-16" />
     </section>

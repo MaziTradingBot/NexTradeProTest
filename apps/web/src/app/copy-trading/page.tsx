@@ -1,20 +1,28 @@
 'use client';
 
-import { TrendingUp, Users } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Copy, TrendingUp, Users } from 'lucide-react';
 import { MarketingNav } from '@/components/marketing/MarketingNav';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { cn } from '@/lib/utils';
 
 const TRADERS = [
-  { name: 'Alex Quant', roi: 184.2, win: 87, followers: 12400, risk: 'Medium' },
-  { name: 'Nova Capital', roi: 142.7, win: 81, followers: 9800, risk: 'Low' },
-  { name: 'CryptoSage', roi: 121.5, win: 79, followers: 7600, risk: 'Medium' },
-  { name: 'DeltaEdge', roi: 98.3, win: 74, followers: 5400, risk: 'High' },
-  { name: 'Momentum Lab', roi: 76.9, win: 71, followers: 4200, risk: 'Low' },
-  { name: 'BlueWhale FX', roi: 64.1, win: 69, followers: 3100, risk: 'Medium' },
+  { name: 'Alex Quant', roi: 184.2, win: 87, monthly: 12.4, profit: 184200, followers: 12400, risk: 'Medium', riskScore: 5.2, trades: 1240, drawdown: 14.8, pair: 'BTCUSDT', side: 'BUY', lev: 10 },
+  { name: 'Nova Capital', roi: 142.7, win: 81, monthly: 9.1, profit: 142700, followers: 9800, risk: 'Low', riskScore: 3.1, trades: 980, drawdown: 8.2, pair: 'ETHUSDT', side: 'BUY', lev: 5 },
+  { name: 'CryptoSage', roi: 121.5, win: 79, monthly: 8.3, profit: 121500, followers: 7600, risk: 'Medium', riskScore: 4.7, trades: 760, drawdown: 12.1, pair: 'SOLUSDT', side: 'BUY', lev: 8 },
+  { name: 'DeltaEdge', roi: 98.3, win: 74, monthly: 7.0, profit: 98300, followers: 5400, risk: 'High', riskScore: 7.9, trades: 2100, drawdown: 22.5, pair: 'BTCUSDT', side: 'SELL', lev: 20 },
+  { name: 'Momentum Lab', roi: 76.9, win: 71, monthly: 5.6, profit: 76900, followers: 4200, risk: 'Low', riskScore: 2.8, trades: 540, drawdown: 6.9, pair: 'BNBUSDT', side: 'BUY', lev: 4 },
+  { name: 'BlueWhale FX', roi: 64.1, win: 69, monthly: 4.8, profit: 64100, followers: 3100, risk: 'Medium', riskScore: 5.5, trades: 890, drawdown: 15.3, pair: 'XRPUSDT', side: 'BUY', lev: 6 },
 ];
 
 export default function CopyTradingPage() {
+  const router = useRouter();
+
+  const copyTrade = (t: (typeof TRADERS)[number]) => {
+    const q = new URLSearchParams({ symbol: t.pair, side: t.side, leverage: String(t.lev), copyFrom: t.name });
+    router.push(`/trading?${q.toString()}`);
+  };
+
   return (
     <div className="min-h-screen bg-bg text-[#E8F1FF]" style={{ fontFamily: "'Figtree', system-ui, sans-serif" }}>
       <MarketingNav />
@@ -23,7 +31,8 @@ export default function CopyTradingPage() {
         <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 lg:py-20">
           <h1 className="text-4xl font-extrabold tracking-tight text-[#E8F1FF] sm:text-5xl">Copy the pros</h1>
           <p className="mt-4 text-lg text-[#A0BDD8]">
-            Mirror top-ranked traders with transparent ROI, win rate and risk levels. Copying is simulated for demonstration.
+            Mirror top-ranked traders with transparent stats. Clicking Copy opens a pre-filled order ticket you review and
+            confirm — nothing is executed automatically. Copying is simulated for demonstration.
           </p>
         </div>
       </section>
@@ -56,7 +65,24 @@ export default function CopyTradingPage() {
                   <div className="text-xs text-[#5E7A96]">Risk</div>
                 </div>
               </div>
-              <button className="mt-5 w-full rounded-full bg-[#0EA5E9] py-2.5 text-sm font-semibold text-white transition hover:bg-[#0891D4]">Copy trader</button>
+              <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-[#12233a] pt-4 text-xs">
+                {[
+                  ['Monthly return', `+${t.monthly}%`],
+                  ['Total profit', `$${t.profit.toLocaleString()}`],
+                  ['Total trades', t.trades.toLocaleString()],
+                  ['Max drawdown', `-${t.drawdown}%`],
+                  ['Risk score', `${t.riskScore}/10`],
+                  ['Copies', t.pair.replace('USDT', '') + ' ' + (t.side === 'BUY' ? 'Long' : 'Short') + ' ' + t.lev + 'x'],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between">
+                    <span className="text-[#5E7A96]">{k}</span>
+                    <span className="font-medium text-[#E8F1FF]">{v}</span>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => copyTrade(t)} className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#0EA5E9] py-2.5 text-sm font-semibold text-white transition hover:bg-[#0891D4]">
+                <Copy size={15} /> Copy trade
+              </button>
             </div>
           ))}
         </div>

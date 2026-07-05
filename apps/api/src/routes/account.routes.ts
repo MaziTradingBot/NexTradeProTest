@@ -544,6 +544,64 @@ router.post('/deposit', async (req, res) => {
   res.status(201).json(txn);
 });
 
+// Luhn check so obviously-bogus card numbers are rejected client- and server-side.
+function luhnValid(num: string): boolean {
+  const digits = num.replace(/\D/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+  let sum = 0;
+  let alt = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = parseInt(digits[i], 10);
+    if (alt) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
+// POST /api/account/deposit/card — simulated credit/debit card deposit. The
+// payment is simulated (no real processor); on success the wallet is credited
+// instantly and a completed transaction is recorded.
+router.post('/deposit/card', async (req, res) => {
+  const mode = getMode(req);
+  const schema = z.object({
+    asset: z.string().min(2),
+    amount: z.number().positive().max(1_000_000),
+    cardNumber: z.string().min(12),
+    expiry: z.string().regex(/^\d{2}\/\d{2}$/, 'Expiry must be MM/YY'),
+    cvc: z.string().regex(/^\d{3,4}$/, 'Invalid CVC'),
+    name: z.string().min(2),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+  const { asset, amount, cardNumber } = parsed.data;
+  if (!luhnValid(cardNumber)) return res.status(402).json({ error: 'The card number is invalid. Please check and try again.' });
+
+  // Simulated expiry validity check.
+  const [mm, yy] = parsed.data.expiry.split('/').map((n) => parseInt(n, 10));
+  const exp = new Date(2000 + yy, mm, 1);
+  if (mm < 1 || mm > 12 || exp < new Date()) return res.status(402).json({ error: 'The card has expired.' });
+
+  const last4 = cardNumber.replace(/\D/g, '').slice(-4);
+  const [txn] = await prisma.$transaction([
+    prisma.transaction.create({
+      data: { userId: req.user!.id, mode, type: 'DEPOSIT', asset, network: 'CARD', amount, status: 'COMPLETED', reference: `CARD-${Date.now()}`, note: `Card deposit •••• ${last4}` },
+    }),
+    prisma.wallet.upsert({
+      where: { userId_asset_mode: { userId: req.user!.id, asset, mode } },
+      create: { userId: req.user!.id, asset, mode, balance: amount },
+      update: { balance: { increment: amount } },
+    }),
+  ]);
+  await prisma.notification.create({ data: { userId: req.user!.id, title: 'Card deposit successful', body: `${amount} ${asset} was added to your ${mode.toLowerCase()} account via card ending ${last4}.`, type: 'SUCCESS' } }).catch(() => {});
+  await audit({ actorId: req.user!.id, action: 'deposit.card', target: txn.id, meta: { mode, amount, asset }, ip: req.ip });
+  publishBalance(req.user!.id, 'deposit.card', mode);
+  res.status(201).json(txn);
+});
+
 // POST /api/account/request-demo-funds — user asks an admin to top up demo balance
 router.post('/request-demo-funds', async (req, res) => {
   const parsed = z.object({ amount: z.number().positive().max(1000000) }).safeParse(req.body);
@@ -628,12 +686,63 @@ router.post('/2fa/disable', async (req, res) => {
 // ---------------------------------------------------------------------------
 // KYC — user submission flow
 // ---------------------------------------------------------------------------
+// Proof-of-Address threshold (USD-equivalent). A single completed deposit at
+// or above this, or cumulative completed deposits at or above it, requires POA.
+const POA_THRESHOLD = 5000;
+const FIAT_LIKE = new Set(['USDT', 'USDC', 'USD', 'EUR', 'GBP']);
+
+async function poaRequirement(userId: string): Promise<{ required: boolean; cumulative: number; threshold: number }> {
+  const deposits = await prisma.transaction.findMany({
+    where: { userId, type: 'DEPOSIT', status: 'COMPLETED', mode: 'LIVE' },
+    select: { amount: true, asset: true },
+  });
+  let cumulative = 0;
+  let maxSingle = 0;
+  for (const d of deposits) {
+    if (!FIAT_LIKE.has(d.asset)) continue; // only value fiat-like deposits
+    const a = parseFloat(d.amount.toString());
+    cumulative += a;
+    maxSingle = Math.max(maxSingle, a);
+  }
+  return { required: maxSingle >= POA_THRESHOLD || cumulative >= POA_THRESHOLD, cumulative, threshold: POA_THRESHOLD };
+}
+
 router.get('/kyc', async (req, res) => {
-  const [user, submission] = await Promise.all([
-    prisma.user.findUnique({ where: { id: req.user!.id }, select: { kycStatus: true } }),
+  const [user, submission, poaSubmission, poa] = await Promise.all([
+    prisma.user.findUnique({ where: { id: req.user!.id }, select: { kycStatus: true, poaStatus: true } }),
     prisma.kycSubmission.findFirst({ where: { userId: req.user!.id }, orderBy: { createdAt: 'desc' } }),
+    prisma.addressProof.findFirst({ where: { userId: req.user!.id }, orderBy: { createdAt: 'desc' } }),
+    poaRequirement(req.user!.id),
   ]);
-  res.json({ status: user?.kycStatus ?? 'NONE', submission });
+  res.json({
+    status: user?.kycStatus ?? 'NONE',
+    submission,
+    poaStatus: user?.poaStatus ?? 'NONE',
+    poaSubmission: poaSubmission ? { docType: poaSubmission.docType, issuedDate: poaSubmission.issuedDate, status: poaSubmission.status, createdAt: poaSubmission.createdAt } : null,
+    poaRequired: poa.required,
+    poaThreshold: poa.threshold,
+    depositsTotal: poa.cumulative,
+  });
+});
+
+// POST /api/account/poa — submit a proof-of-address document.
+router.post('/poa', async (req, res) => {
+  const schema = z.object({
+    docType: z.enum(['UTILITY_BILL', 'BANK_STATEMENT', 'GOVERNMENT_LETTER', 'TAX_DOCUMENT']),
+    issuedDate: z.string().optional(),
+    documentName: z.string().optional(),
+    documentType: z.string().optional(),
+    documentData: z.string().max(5_600_000),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+  await prisma.$transaction([
+    prisma.addressProof.create({ data: { userId: req.user!.id, ...parsed.data, status: 'PENDING' } }),
+    prisma.user.update({ where: { id: req.user!.id }, data: { poaStatus: 'PENDING' } }),
+  ]);
+  await audit({ actorId: req.user!.id, action: 'poa.submit', target: req.user!.id, meta: { docType: parsed.data.docType }, ip: req.ip });
+  res.status(201).json({ ok: true, poaStatus: 'PENDING' });
 });
 
 router.post('/kyc', async (req, res) => {

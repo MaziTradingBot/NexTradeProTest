@@ -45,6 +45,7 @@ model User {
   avatarUrl     String?
   status          UserStatus @default(ACTIVE)
   kycStatus       KycStatus  @default(NONE)
+  poaStatus       KycStatus  @default(NONE) // proof-of-address verification stage
   twoFactor       Boolean    @default(false)
   twoFactorSecret String?
   referralCode    String?    @unique
@@ -80,6 +81,7 @@ model User {
   notifications Notification[]
   watchlist     WatchlistItem[]
   priceAlerts   PriceAlert[]
+  addressProofs AddressProof[]
   referrals     User[]          @relation("Referrals")
   referredBy    User?           @relation("Referrals", fields: [referredById], references: [id])
   clients       User[]          @relation("BrokerClients")
@@ -375,6 +377,27 @@ model PriceAlert {
 
   @@index([userId])
   @@index([active])
+}
+
+// Proof-of-Address (POA) — second KYC stage, required for high-value deposits.
+model AddressProof {
+  id           String    @id @default(cuid())
+  userId       String
+  docType      String // UTILITY_BILL, BANK_STATEMENT, GOVERNMENT_LETTER, TAX_DOCUMENT
+  issuedDate   String? // user-declared issue date (must be within 3 months)
+  documentName String?
+  documentType String?
+  documentData String?   @db.Text
+  status       KycStatus @default(PENDING)
+  note         String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
 }
 
 model KycSubmission {

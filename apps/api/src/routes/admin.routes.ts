@@ -743,6 +743,36 @@ router.post('/kyc/:id/review', requirePermission('kyc.approve'), async (req, res
   res.json({ ok: true });
 });
 
+// Proof-of-Address review queue.
+router.get('/poa', requirePermission('kyc.view'), async (_req, res) => {
+  const rows = await prisma.addressProof.findMany({
+    where: { status: 'PENDING' },
+    orderBy: { createdAt: 'desc' },
+    include: { user: { select: { email: true, fullName: true } } },
+  });
+  res.json(rows);
+});
+
+const poaReviewSchema = z.object({ decision: z.enum(['APPROVED', 'REJECTED', 'RESUBMIT']), note: z.string().max(500).optional() });
+router.post('/poa/:id/review', requirePermission('kyc.approve'), async (req, res) => {
+  const parsed = poaReviewSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid decision' });
+  const proof = await prisma.addressProof.findUnique({ where: { id: req.params.id } });
+  if (!proof) return res.status(404).json({ error: 'Submission not found' });
+
+  // RESUBMIT clears the requirement back to NONE so the user can upload again.
+  const proofStatus = parsed.data.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
+  const userPoa = parsed.data.decision === 'APPROVED' ? 'APPROVED' : parsed.data.decision === 'REJECTED' ? 'REJECTED' : 'NONE';
+  await prisma.$transaction([
+    prisma.addressProof.update({ where: { id: proof.id }, data: { status: proofStatus, note: parsed.data.note, reviewedById: req.user!.id, reviewedAt: new Date() } }),
+    prisma.user.update({ where: { id: proof.userId }, data: { poaStatus: userPoa } }),
+  ]);
+  const msg = parsed.data.decision === 'APPROVED' ? 'Your proof of address was approved.' : parsed.data.decision === 'REJECTED' ? 'Your proof of address was rejected.' : 'Please resubmit your proof of address.';
+  await prisma.notification.create({ data: { userId: proof.userId, title: 'Proof of address update', body: msg + (parsed.data.note ? ` Note: ${parsed.data.note}` : ''), type: parsed.data.decision === 'APPROVED' ? 'SUCCESS' : 'WARNING' } }).catch(() => {});
+  await audit({ actorId: req.user!.id, action: `poa.${parsed.data.decision.toLowerCase()}`, target: proof.userId, ip: req.ip });
+  res.json({ ok: true });
+});
+
 // ---------------------------------------------------------------------------
 // Deposit wallet-address management
 // ---------------------------------------------------------------------------

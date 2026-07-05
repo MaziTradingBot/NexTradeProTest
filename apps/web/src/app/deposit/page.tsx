@@ -1,13 +1,22 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, Check, ArrowDownToLine, Info, Loader2 } from 'lucide-react';
+import { Copy, Check, ArrowDownToLine, Info, Loader2, CreditCard, Coins, CheckCircle2, XCircle } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { QrCode } from '@/components/QrCode';
 import { api } from '@/lib/api';
 import { useMode } from '@/lib/useMode';
 import { cn } from '@/lib/utils';
+
+// Detect the card brand from the number prefix (display only).
+function cardBrand(num: string): 'Visa' | 'Mastercard' | 'Amex' | 'Card' {
+  const n = num.replace(/\D/g, '');
+  if (/^4/.test(n)) return 'Visa';
+  if (/^(5[1-5]|2[2-7])/.test(n)) return 'Mastercard';
+  if (/^3[47]/.test(n)) return 'Amex';
+  return 'Card';
+}
 
 interface DepositAddress {
   id: string;
@@ -30,6 +39,46 @@ function DepositInner() {
   const [confirming, setConfirming] = useState(false);
   const [confirmStep, setConfirmStep] = useState(0);
   const [result, setResult] = useState<string | null>(null);
+  const [method, setMethod] = useState<'CRYPTO' | 'CARD'>('CRYPTO');
+  // Card deposit state
+  const [card, setCard] = useState({ number: '', expiry: '', cvc: '', name: '', asset: 'USDT', amount: '' });
+  const [cardStatus, setCardStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
+  const [cardMsg, setCardMsg] = useState<string | null>(null);
+
+  const formatCardNumber = (v: string) => v.replace(/\D/g, '').slice(0, 19).replace(/(.{4})/g, '$1 ').trim();
+  const formatExpiry = (v: string) => {
+    const d = v.replace(/\D/g, '').slice(0, 4);
+    return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+  };
+
+  const payByCard = async () => {
+    setCardMsg(null);
+    const amt = parseFloat(card.amount);
+    if (!amt || amt <= 0) return setCardMsg('Enter a valid amount.');
+    if (card.number.replace(/\D/g, '').length < 12) return setCardMsg('Enter a valid card number.');
+    if (!/^\d{2}\/\d{2}$/.test(card.expiry)) return setCardMsg('Enter the expiry as MM/YY.');
+    if (!/^\d{3,4}$/.test(card.cvc)) return setCardMsg('Enter a valid CVC.');
+    if (card.name.trim().length < 2) return setCardMsg('Enter the cardholder name.');
+    setCardStatus('processing');
+    // Simulated secure-processing delay.
+    await new Promise((r) => setTimeout(r, 1600));
+    try {
+      await api.post('/api/account/deposit/card', {
+        asset: card.asset,
+        amount: amt,
+        cardNumber: card.number.replace(/\D/g, ''),
+        expiry: card.expiry,
+        cvc: card.cvc,
+        name: card.name,
+      });
+      setCardStatus('success');
+      setCardMsg(`${amt} ${card.asset} added to your ${mode.toLowerCase()} wallet.`);
+      setCard((c) => ({ ...c, number: '', expiry: '', cvc: '', amount: '' }));
+    } catch (e) {
+      setCardStatus('error');
+      setCardMsg(e instanceof Error ? e.message : 'Payment failed. Please try again.');
+    }
+  };
 
   useEffect(() => {
     api
@@ -113,8 +162,83 @@ function DepositInner() {
         </span>
       </div>
 
+      {/* Method selector */}
+      <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/20 p-1">
+        {([['CRYPTO', 'Crypto', Coins], ['CARD', 'Credit / Debit Card', CreditCard]] as const).map(([m, l, Icon]) => (
+          <button
+            key={m}
+            onClick={() => setMethod(m)}
+            className={cn('flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition', method === m ? 'bg-brand-blue text-white' : 'text-slate-400 hover:text-white')}
+          >
+            <Icon size={16} /> {l}
+          </button>
+        ))}
+      </div>
+
+      {method === 'CARD' ? (
+        <div className="card mt-4">
+          {cardStatus === 'success' ? (
+            <div className="py-6 text-center">
+              <CheckCircle2 size={44} className="mx-auto text-brand-emerald" />
+              <h2 className="mt-3 text-lg font-bold text-white">Payment successful</h2>
+              <p className="mt-1 text-sm text-slate-400">{cardMsg}</p>
+              <button onClick={() => { setCardStatus('idle'); setCardMsg(null); }} className="btn-ghost mt-5">Make another deposit</button>
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="font-semibold text-white">Pay by card</h2>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <span className="rounded bg-white/10 px-1.5 py-0.5 font-semibold text-white">{cardBrand(card.number)}</span>
+                  <span className="rounded bg-white/5 px-1.5 py-0.5">VISA</span>
+                  <span className="rounded bg-white/5 px-1.5 py-0.5">MC</span>
+                  <span className="rounded bg-white/5 px-1.5 py-0.5">AMEX</span>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block sm:col-span-2">
+                  <span className="label">Card number</span>
+                  <input value={card.number} onChange={(e) => setCard({ ...card, number: formatCardNumber(e.target.value) })} inputMode="numeric" placeholder="1234 5678 9012 3456" className="input font-mono" />
+                </label>
+                <label className="block">
+                  <span className="label">Expiry (MM/YY)</span>
+                  <input value={card.expiry} onChange={(e) => setCard({ ...card, expiry: formatExpiry(e.target.value) })} inputMode="numeric" placeholder="12/28" className="input font-mono" />
+                </label>
+                <label className="block">
+                  <span className="label">CVC</span>
+                  <input value={card.cvc} onChange={(e) => setCard({ ...card, cvc: e.target.value.replace(/\D/g, '').slice(0, 4) })} inputMode="numeric" placeholder="123" className="input font-mono" />
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className="label">Cardholder name</span>
+                  <input value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value })} placeholder="Name on card" className="input" />
+                </label>
+                <label className="block">
+                  <span className="label">Deposit as</span>
+                  <select value={card.asset} onChange={(e) => setCard({ ...card, asset: e.target.value })} className="input">
+                    {['USDT', 'USDC', 'BTC', 'ETH'].map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="label">Amount</span>
+                  <input value={card.amount} onChange={(e) => setCard({ ...card, amount: e.target.value })} type="number" placeholder="0.00" className="input" />
+                </label>
+              </div>
+              {cardMsg && cardStatus === 'error' && (
+                <p className="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400"><XCircle size={15} /> {cardMsg}</p>
+              )}
+              <button onClick={payByCard} disabled={cardStatus === 'processing'} className="btn-primary mt-4 w-full">
+                {cardStatus === 'processing' ? <><Loader2 size={16} className="animate-spin" /> Processing securely…</> : <>Pay {card.amount ? `${card.amount} ${card.asset}` : ''}</>}
+              </button>
+              <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs text-slate-500">
+                <Info size={12} /> Simulated payment gateway — no real card is charged.
+              </p>
+            </>
+          )}
+        </div>
+      ) : (
+      <>
       {/* Asset selector */}
-      <div className="card mt-6">
+      <div className="card mt-4">
         <label className="label">Select asset</label>
         <div className="flex flex-wrap gap-2">
           {assets.map((a) => (
@@ -222,6 +346,8 @@ function DepositInner() {
             {result && <p className="mt-3 text-sm text-slate-200">{result}</p>}
           </div>
         </div>
+      )}
+      </>
       )}
 
       <p className="mt-6 text-center text-xs text-slate-500">
