@@ -17,8 +17,8 @@ import TradingViewChart from '@/components/TradingViewChart';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useMode } from '@/lib/useMode';
-import { useFlags } from '@/lib/useFlags';
 import { useTickers, assetName } from '@/lib/useTickers';
+import { useTradingAccount, liveMetrics, positionPnl, type Position } from '@/lib/useTradingAccount';
 import { formatPercent, cn } from '@/lib/utils';
 
 interface Kline {
@@ -38,15 +38,17 @@ interface OpenOrder {
   status: string;
 }
 
+const usd = (v: number, d = 2) => `$${v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+
 function TradingTerminal() {
   const params = useSearchParams();
   const { tickers } = useTickers(5000);
   const { user } = useAuth();
   const { mode } = useMode();
-  const { flags } = useFlags();
   const isLive = mode === 'LIVE';
-  // Live trading is locked unless an admin has activated it.
-  const tradingLocked = isLive && !flags.live_trading;
+  const { summary, refresh } = useTradingAccount();
+  // Live trading is fully operational and runs against the live account.
+  const tradingLocked = false;
 
   const [symbol, setSymbol] = useState((params.get('symbol') || 'BTCUSDT').toUpperCase());
   const ticker = tickers.find((t) => t.symbol === symbol);
@@ -96,6 +98,25 @@ function TradingTerminal() {
 
   const price = ticker?.price ?? klines.at(-1)?.close ?? 0;
 
+  // Live price lookup for any symbol from the streaming ticker feed. Positions
+  // are re-valued on every tick, so the account metrics update in real time.
+  const priceOf = (sym: string) => tickers.find((t) => t.symbol === sym.toUpperCase())?.price ?? 0;
+  const metrics = summary ? liveMetrics(summary, priceOf) : null;
+  const marginWarning =
+    summary && metrics?.marginLevel != null && metrics.marginLevel <= summary.marginCallLevel;
+  const stopOutClose =
+    summary && metrics?.marginLevel != null && metrics.marginLevel <= summary.stopOutLevel;
+
+  const closePosition = async (id: string) => {
+    try {
+      await api.post(`/api/account/orders/${id}/close`);
+      refresh();
+      loadWallets();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Failed to close position');
+    }
+  };
+
   const placeOrder = async () => {
     setMsg(null);
     if (!user) {
@@ -114,6 +135,16 @@ function TradingTerminal() {
     }
     const sl = parseFloat(stopLoss) || undefined;
     const tp = parseFloat(takeProfit) || undefined;
+    const lev = market === 'FUTURES' ? leverage : 1;
+
+    // Pre-flight free-margin check for market positions (mirrors the server).
+    if (orderType === 'MARKET' && metrics) {
+      const marginNeeded = (price * amt) / lev;
+      if (marginNeeded > metrics.freeMargin + 1e-8) {
+        setMsg(`Insufficient free margin. Needs ${usd(marginNeeded)} · available ${usd(metrics.freeMargin)}.`);
+        return;
+      }
+    }
     try {
       await api.post('/api/account/orders', {
         symbol,
@@ -121,22 +152,24 @@ function TradingTerminal() {
         type: orderType,
         price: limit,
         amount: amt,
-        leverage: market === 'FUTURES' ? leverage : 1,
+        leverage: lev,
         stopLoss: sl,
         takeProfit: tp,
       });
-      const lev = market === 'FUTURES' ? ` at ${leverage}x` : '';
+      const levLabel = market === 'FUTURES' ? ` at ${leverage}x` : '';
       const dir = market === 'FUTURES' ? (side === 'BUY' ? 'LONG' : 'SHORT') : side;
       const prot = sl || tp ? ` · SL ${sl ?? '—'} / TP ${tp ?? '—'}` : '';
       setMsg(
         (orderType === 'MARKET'
-          ? `✓ Simulated ${dir} order for ${amt} ${assetName(symbol)}${lev} filled at $${price.toLocaleString()}`
-          : `✓ ${dir} limit order placed for ${amt} ${assetName(symbol)}${lev} @ $${limit.toLocaleString()}`) + prot,
+          ? `✓ ${dir} position opened for ${amt} ${assetName(symbol)}${levLabel} at $${price.toLocaleString()}`
+          : `✓ ${dir} limit order placed for ${amt} ${assetName(symbol)}${levLabel} @ $${limit.toLocaleString()}`) + prot,
       );
       setAmount('');
       setStopLoss('');
       setTakeProfit('');
       loadOrders();
+      refresh();
+      loadWallets();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Order failed');
     }
@@ -176,21 +209,82 @@ function TradingTerminal() {
         </span>
       </div>
 
-      {tradingLocked && (
-        <div className="mb-4 flex items-start gap-3 rounded-xl border border-brand-blue/30 bg-brand-blue/10 px-4 py-3 text-sm text-slate-200">
-          <span className="mt-0.5 text-brand-blue">🔒</span>
-          <div>
-            <div className="font-semibold text-white">Live trading is not yet available</div>
-            <p className="mt-0.5 text-slate-400">
-              Real trading is available only after exchange integration, regulatory compliance, and
-              administrator activation. Switch to Demo Mode to trade with simulated execution.
-            </p>
+      {/* Account summary — professional trading metrics, live-updated */}
+      {user && summary && metrics && (
+        <div className="card mb-4 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-sm font-semibold text-white">{isLive ? 'Live' : 'Demo'} Trading Account</span>
+            <span className={cn('badge', isLive ? 'bg-brand-blue/15 text-brand-blue' : 'bg-brand-gold/10 text-brand-gold')}>
+              {isLive ? 'Live' : 'Demo'} · {summary.currency}
+            </span>
+            {metrics.marginLevel != null && (
+              <span
+                className={cn(
+                  'badge ml-auto',
+                  metrics.marginLevel <= summary.stopOutLevel
+                    ? 'bg-red-500/15 text-red-400'
+                    : metrics.marginLevel <= summary.marginCallLevel
+                      ? 'bg-brand-gold/15 text-brand-gold'
+                      : 'bg-brand-emerald/15 text-brand-emerald',
+                )}
+              >
+                Margin {metrics.marginLevel.toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {[
+              { label: 'Balance', value: usd(metrics.balance) },
+              { label: 'Equity', value: usd(metrics.equity) },
+              {
+                label: 'Floating P/L',
+                value: `${metrics.floatingPnl >= 0 ? '+' : ''}${usd(metrics.floatingPnl)}`,
+                tone: metrics.floatingPnl > 0 ? 'up' : metrics.floatingPnl < 0 ? 'down' : undefined,
+              },
+              { label: 'Free Margin', value: usd(metrics.freeMargin) },
+              { label: 'Used Margin', value: usd(metrics.usedMargin) },
+              {
+                label: 'Margin Level',
+                value: metrics.marginLevel != null ? `${metrics.marginLevel.toFixed(1)}%` : '—',
+              },
+              { label: 'Open Positions', value: String(metrics.openPositions) },
+              { label: 'Total Exposure', value: usd(metrics.exposure) },
+              { label: 'Available Margin', value: usd(metrics.availableMargin) },
+              { label: 'Reserved', value: usd(summary.locked) },
+            ].map((m) => (
+              <div key={m.label} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
+                <div className="text-[11px] uppercase tracking-wide text-slate-500">{m.label}</div>
+                <div
+                  className={cn(
+                    'mt-0.5 font-mono text-sm font-semibold',
+                    m.tone === 'up' ? 'text-brand-emerald' : m.tone === 'down' ? 'text-red-400' : 'text-white',
+                  )}
+                >
+                  {m.value}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
-      {isLive && !tradingLocked && (
-        <div className="mb-4 rounded-xl border border-brand-emerald/30 bg-brand-emerald/10 px-4 py-2.5 text-sm text-slate-200">
-          <span className="font-semibold text-brand-emerald">Live trading is active.</span> Orders are placed against your live account balance.
+
+      {marginWarning && (
+        <div
+          className={cn(
+            'mb-4 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm',
+            stopOutClose ? 'border-red-500/40 bg-red-500/10 text-red-200' : 'border-brand-gold/40 bg-brand-gold/10 text-amber-100',
+          )}
+        >
+          <span className="mt-0.5">⚠️</span>
+          <div>
+            <div className="font-semibold text-white">
+              {stopOutClose ? 'Stop-out imminent' : 'Margin call'}
+            </div>
+            <p className="mt-0.5 opacity-90">
+              Your margin level is {metrics?.marginLevel?.toFixed(1)}%. Positions are force-closed at{' '}
+              {summary?.stopOutLevel}%. Add funds or close positions to avoid liquidation.
+            </p>
+          </div>
         </div>
       )}
 
@@ -461,10 +555,72 @@ function TradingTerminal() {
         </div>
       </div>
 
-      {/* Open orders */}
-      {user && (
+      {/* Open positions */}
+      {user && summary && (
         <div className="card mt-4 p-0">
-          <div className="border-b border-white/10 px-5 py-3 text-sm font-semibold text-white">Open Orders</div>
+          <div className="flex items-center gap-2 border-b border-white/10 px-5 py-3">
+            <span className="text-sm font-semibold text-white">Open Positions</span>
+            <span className="badge bg-white/5 text-slate-400">{summary.positions.length}</span>
+          </div>
+          {summary.positions.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-slate-500">No open positions. Place a market order to open one.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-2">Pair</th>
+                    <th className="px-5 py-2">Side</th>
+                    <th className="px-5 py-2 text-right">Size</th>
+                    <th className="px-5 py-2 text-right">Entry</th>
+                    <th className="px-5 py-2 text-right">Mark</th>
+                    <th className="px-5 py-2 text-right">Margin</th>
+                    <th className="px-5 py-2 text-right">P/L</th>
+                    <th className="px-5 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {summary.positions.map((p: Position) => {
+                    const mark = priceOf(p.symbol) || p.markPrice || p.entryPrice;
+                    const pnl = positionPnl(p, mark);
+                    const pnlPct = p.margin > 0 ? (pnl / p.margin) * 100 : 0;
+                    return (
+                      <tr key={p.id}>
+                        <td className="px-5 py-2.5 font-medium text-white">
+                          {assetName(p.symbol)}/USDT
+                          {p.leverage > 1 && <span className="ml-1.5 text-[11px] text-brand-gold">{p.leverage}x</span>}
+                        </td>
+                        <td className={cn('px-5 py-2.5 font-semibold', p.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>
+                          {p.side === 'BUY' ? 'Long' : 'Short'}
+                        </td>
+                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">{p.amount}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">{usd(p.entryPrice, p.entryPrice < 2 ? 4 : 2)}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">{usd(mark, mark < 2 ? 4 : 2)}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-slate-400">{usd(p.margin)}</td>
+                        <td className={cn('px-5 py-2.5 text-right font-mono font-semibold', pnl >= 0 ? 'text-brand-emerald' : 'text-red-400')}>
+                          {pnl >= 0 ? '+' : ''}
+                          {usd(pnl)}
+                          <span className="ml-1 text-[11px] opacity-70">({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)</span>
+                        </td>
+                        <td className="px-5 py-2.5 text-right">
+                          <button onClick={() => closePosition(p.id)} className="rounded-lg bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20">
+                            Close
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Open orders (pending limit / stop) */}
+      {user && openOrders.filter((o) => o.status === 'OPEN').length > 0 && (
+        <div className="card mt-4 p-0">
+          <div className="border-b border-white/10 px-5 py-3 text-sm font-semibold text-white">Working Orders</div>
           {openOrders.filter((o) => o.status === 'OPEN').length === 0 ? (
             <p className="px-5 py-6 text-sm text-slate-500">No open orders.</p>
           ) : (

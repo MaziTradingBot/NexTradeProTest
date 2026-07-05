@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { authenticate, requireAdmin, requirePermission } from '../middleware/auth';
 import { audit } from '../lib/audit';
@@ -254,6 +255,24 @@ router.post('/users/:id/credit', requirePermission('balances.manage'), async (re
 // ---------------------------------------------------------------------------
 // Withdrawals — the "Withdrawal Approval Admin" workflow
 // ---------------------------------------------------------------------------
+// When a withdrawal is created the amount is moved from the user's balance to
+// `locked` (reserved). These helpers unwind that reservation:
+//   • refund   — rejection/failure: locked → balance (funds returned).
+//   • clear    — completion: locked -= amount (funds have left the account).
+type WithdrawalTxn = { userId: string; asset: string; mode: 'DEMO' | 'LIVE'; amount: Prisma.Decimal };
+function refundReservation(txn: WithdrawalTxn) {
+  return prisma.wallet.update({
+    where: { userId_asset_mode: { userId: txn.userId, asset: txn.asset, mode: txn.mode } },
+    data: { balance: { increment: txn.amount }, locked: { decrement: txn.amount } },
+  });
+}
+function clearReservation(txn: WithdrawalTxn) {
+  return prisma.wallet.update({
+    where: { userId_asset_mode: { userId: txn.userId, asset: txn.asset, mode: txn.mode } },
+    data: { locked: { decrement: txn.amount } },
+  });
+}
+
 router.get('/withdrawals', requirePermission('withdrawals.view'), async (req, res) => {
   const status = (req.query.status as string) || 'PENDING';
   const txns = await prisma.transaction.findMany({
@@ -274,14 +293,18 @@ router.post('/withdrawals/:id/review', requirePermission('withdrawals.approve'),
   if (!txn || txn.type !== 'WITHDRAWAL') return res.status(404).json({ error: 'Withdrawal not found' });
   if (txn.status !== 'PENDING') return res.status(409).json({ error: 'Already reviewed' });
 
-  const updated = await prisma.transaction.update({
-    where: { id: txn.id },
-    data: {
-      status: parsed.data.decision,
-      reviewedById: req.user!.id,
-      reviewedAt: new Date(),
-    },
-  });
+  // Rejecting returns the reserved funds to the user's available balance.
+  // Approving keeps them reserved (they leave the account on completion).
+  const ops: Prisma.PrismaPromise<unknown>[] = [
+    prisma.transaction.update({
+      where: { id: txn.id },
+      data: { status: parsed.data.decision, reviewedById: req.user!.id, reviewedAt: new Date() },
+    }),
+  ];
+  if (parsed.data.decision === 'REJECTED') {
+    ops.push(refundReservation(txn));
+  }
+  const [updated] = await prisma.$transaction(ops);
 
   await audit({
     actorId: req.user!.id,
@@ -315,18 +338,32 @@ router.post('/withdrawals/:id/status', requirePermission('withdrawals.approve'),
   const txn = await prisma.transaction.findUnique({ where: { id: req.params.id } });
   if (!txn || txn.type !== 'WITHDRAWAL') return res.status(404).json({ error: 'Withdrawal not found' });
 
+  // Terminal states are final — once funds have been returned (REJECTED) or
+  // have left the account (COMPLETED) the reservation accounting is settled and
+  // must not be replayed by a further transition.
+  const wasTerminal = txn.status === 'COMPLETED' || txn.status === 'REJECTED';
+  if (wasTerminal && parsed.data.status !== txn.status) {
+    return res.status(409).json({ error: `This withdrawal is already ${txn.status.toLowerCase()} and cannot be changed.` });
+  }
+
   // On completion, generate a simulated (demo) transaction reference.
   const genRef = parsed.data.status === 'COMPLETED' && !txn.reference?.startsWith('0xDEMO');
-  const updated = await prisma.transaction.update({
-    where: { id: txn.id },
-    data: {
-      status: parsed.data.status,
-      note: parsed.data.note ?? txn.note,
-      reviewedById: req.user!.id,
-      reviewedAt: new Date(),
-      ...(genRef ? { reference: `0xDEMO${Math.random().toString(16).slice(2, 14)}` } : {}),
-    },
-  });
+  const ops: Prisma.PrismaPromise<unknown>[] = [
+    prisma.transaction.update({
+      where: { id: txn.id },
+      data: {
+        status: parsed.data.status,
+        note: parsed.data.note ?? txn.note,
+        reviewedById: req.user!.id,
+        reviewedAt: new Date(),
+        ...(genRef ? { reference: `0xDEMO${Math.random().toString(16).slice(2, 14)}` } : {}),
+      },
+    }),
+  ];
+  // Settle the reservation only on the first transition into a terminal state.
+  if (!wasTerminal && parsed.data.status === 'REJECTED') ops.push(refundReservation(txn));
+  if (!wasTerminal && parsed.data.status === 'COMPLETED') ops.push(clearReservation(txn));
+  const [updated] = await prisma.$transaction(ops);
 
   const msg = USER_MSG[parsed.data.status];
   if (msg) {

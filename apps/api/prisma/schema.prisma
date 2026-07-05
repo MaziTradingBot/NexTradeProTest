@@ -167,8 +167,17 @@ enum OrderType {
 enum OrderStatus {
   OPEN
   FILLED
+  CLOSED
   CANCELLED
   REJECTED
+}
+
+// How an open position was closed (for history / analytics).
+enum CloseReason {
+  MANUAL
+  STOP_LOSS
+  TAKE_PROFIT
+  LIQUIDATION
 }
 
 model Order {
@@ -179,12 +188,18 @@ model Order {
   side      OrderSide
   type      OrderType
   leverage   Int        @default(1)
-  price      Decimal    @db.Decimal(24, 8)
-  amount     Decimal    @db.Decimal(24, 8)
+  price      Decimal    @db.Decimal(24, 8) // entry price for filled positions
+  amount     Decimal    @db.Decimal(24, 8) // position size in base asset
+  margin     Decimal    @default(0) @db.Decimal(24, 8) // USDT margin reserved while open
   stopLoss   Decimal?   @db.Decimal(24, 8)
   takeProfit Decimal?   @db.Decimal(24, 8)
   filled     Decimal    @default(0) @db.Decimal(24, 8)
   status    OrderStatus @default(OPEN)
+  // Position lifecycle — set when a filled position is closed.
+  closePrice  Decimal?     @db.Decimal(24, 8)
+  realizedPnl Decimal?     @db.Decimal(24, 8)
+  closeReason CloseReason?
+  closedAt    DateTime?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -192,6 +207,7 @@ model Order {
 
   @@index([userId, mode])
   @@index([symbol])
+  @@index([status])
 }
 
 enum TxType {

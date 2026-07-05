@@ -14,6 +14,7 @@ import accountRoutes from './routes/account.routes';
 import brokerRoutes from './routes/broker.routes';
 import marketRoutes from './routes/market.routes';
 import contentRoutes from './routes/content.routes';
+import { startTradingEngine } from './lib/tradingEngine';
 
 const app = express();
 
@@ -85,6 +86,8 @@ process.on('uncaughtException', (err) => {
 app.listen(env.port, () => {
   // eslint-disable-next-line no-console
   console.log(`🚀 NexTradePro API listening on :${env.port} (${env.nodeEnv})`);
+  // Evaluate SL/TP and margin stop-outs in the background.
+  startTradingEngine();
 });
 
 export default app;
