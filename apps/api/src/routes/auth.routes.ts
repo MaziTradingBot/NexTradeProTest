@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
@@ -91,7 +92,7 @@ router.post('/register', async (req, res) => {
 
   await audit({ actorId: user.id, action: 'auth.register', target: user.id, ip: req.ip });
 
-  const payload = { sub: user.id, email: user.email };
+  const payload = { sub: user.id, email: user.email, tv: user.tokenVersion };
   const access = signAccessToken(payload);
   const refresh = signRefreshToken(payload);
   setAuthCookies(res, access, refresh);
@@ -119,7 +120,7 @@ router.post('/login', async (req, res) => {
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   await audit({ actorId: user.id, action: 'auth.login', target: user.id, ip: req.ip });
 
-  const payload = { sub: user.id, email: user.email };
+  const payload = { sub: user.id, email: user.email, tv: user.tokenVersion };
   const access = signAccessToken(payload);
   const refresh = signRefreshToken(payload);
   setAuthCookies(res, access, refresh);
@@ -136,13 +137,73 @@ router.post('/refresh', async (req, res) => {
   if (!token) return res.status(401).json({ error: 'No refresh token' });
   try {
     const payload = verifyRefreshToken(token);
-    const access = signAccessToken({ sub: payload.sub, email: payload.email });
-    const refresh = signRefreshToken({ sub: payload.sub, email: payload.email });
+    // A password/email change or admin reset bumps tokenVersion, invalidating
+    // this refresh token so the session cannot be silently renewed.
+    const user = await prisma.user.findUnique({ where: { id: payload.sub }, select: { tokenVersion: true, status: true } });
+    if (!user || user.status === 'SUSPENDED' || (payload.tv ?? 0) !== user.tokenVersion) {
+      return res.status(401).json({ error: 'Session expired' });
+    }
+    const newPayload = { sub: payload.sub, email: payload.email, tv: user.tokenVersion };
+    const access = signAccessToken(newPayload);
+    const refresh = signRefreshToken(newPayload);
     setAuthCookies(res, access, refresh);
     return res.json({ accessToken: access });
   } catch {
     return res.status(401).json({ error: 'Invalid refresh token' });
   }
+});
+
+// POST /api/auth/forgot-password — issue a single-use, 30-minute reset token.
+router.post('/forgot-password', async (req, res) => {
+  const parsed = z.object({ email: z.string().email() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid email address' });
+
+  // Always return the same response so the endpoint can't be used to probe
+  // which emails have accounts.
+  const generic = { ok: true, message: 'If an account exists for that email, a password reset link has been sent.' };
+  const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  if (!user) return res.json(generic);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { resetTokenHash: hash, resetTokenExp: new Date(Date.now() + 30 * 60 * 1000) },
+  });
+  await audit({ actorId: user.id, action: 'auth.forgot_password', target: user.id, ip: req.ip });
+
+  const base = env.corsOrigins.find((o) => o.startsWith('http')) ?? 'http://localhost:3000';
+  const resetUrl = `${base}/reset-password?token=${token}`;
+  // Email delivery (SMTP) is not configured for this demo deployment, so the
+  // reset link is returned in the response and logged. In production this URL
+  // would be emailed to the user instead of returned.
+  // eslint-disable-next-line no-console
+  console.log(`🔑 Password reset link for ${user.email}: ${resetUrl}`);
+  return res.json({ ...generic, demo: true, resetUrl });
+});
+
+// POST /api/auth/reset-password — consume the token and set a new password.
+router.post('/reset-password', async (req, res) => {
+  const parsed = z
+    .object({ token: z.string().min(10), password: z.string().min(8, 'Password must be at least 8 characters') })
+    .safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+  const hash = crypto.createHash('sha256').update(parsed.data.token).digest('hex');
+  const user = await prisma.user.findFirst({ where: { resetTokenHash: hash, resetTokenExp: { gt: new Date() } } });
+  if (!user) return res.status(400).json({ error: 'This reset link is invalid or has expired.' });
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await hashPassword(parsed.data.password),
+      resetTokenHash: null, // single-use: invalidate the link
+      resetTokenExp: null,
+      tokenVersion: { increment: 1 }, // sign out all existing sessions
+    },
+  });
+  await audit({ actorId: user.id, action: 'auth.reset_password', target: user.id, ip: req.ip });
+  return res.json({ ok: true });
 });
 
 // POST /api/auth/logout
@@ -159,6 +220,10 @@ router.get('/me', authenticate, async (req, res) => {
     where: { id: u.id },
     select: { kycStatus: true, twoFactor: true },
   });
+  // A Super Admin / full admin always has live-trading access.
+  const canLiveTrade =
+    u.isSuperAdmin ||
+    (u.liveTradingEnabled && u.tradingStatus === 'ACTIVE' && u.tradingPermission === 'FULL' && u.accountStatus !== 'SUSPENDED');
   return res.json({
     id: u.id,
     email: u.email,
@@ -170,6 +235,11 @@ router.get('/me', authenticate, async (req, res) => {
     isBroker: u.isSuperAdmin || u.permissions.has('broker.access'),
     kycStatus: profile?.kycStatus ?? 'NONE',
     twoFactor: profile?.twoFactor ?? false,
+    liveTradingEnabled: u.liveTradingEnabled,
+    tradingStatus: u.tradingStatus,
+    tradingPermission: u.tradingPermission,
+    accountStatus: u.accountStatus,
+    canLiveTrade,
   });
 });
 

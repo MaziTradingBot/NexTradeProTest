@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Copy, KeyRound, Lock, ShieldCheck, Trash2, User } from 'lucide-react';
+import { AtSign, Copy, KeyRound, Lock, ShieldCheck, Trash2, User } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { QrCode } from '@/components/QrCode';
-import { api } from '@/lib/api';
+import { api, setAccessToken } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 
 interface ApiKeyRow {
@@ -25,6 +25,8 @@ function SettingsInner() {
   const [twoFaError, setTwoFaError] = useState<string | null>(null);
   const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
   const [pwError, setPwError] = useState<string | null>(null);
+  const [em, setEm] = useState({ newEmail: '', confirmEmail: '', password: '' });
+  const [emError, setEmError] = useState<string | null>(null);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [newLabel, setNewLabel] = useState('');
   const [newSecret, setNewSecret] = useState<string | null>(null);
@@ -52,11 +54,31 @@ function SettingsInner() {
     if (pw.next.length < 8) return setPwError('New password must be at least 8 characters.');
     if (pw.next !== pw.confirm) return setPwError('New passwords do not match.');
     try {
-      await api.post('/api/account/change-password', { currentPassword: pw.current, newPassword: pw.next });
+      const res = await api.post<{ accessToken?: string }>('/api/account/change-password', { currentPassword: pw.current, newPassword: pw.next });
+      // Keep the current session alive with the freshly re-issued token.
+      if (res.accessToken) setAccessToken(res.accessToken);
       setPw({ current: '', next: '', confirm: '' });
-      flash('Password changed');
+      flash('Password changed — other sessions were signed out');
     } catch (e) {
       setPwError(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const changeEmail = async () => {
+    setEmError(null);
+    if (em.newEmail !== em.confirmEmail) return setEmError('The email addresses do not match.');
+    try {
+      const res = await api.post<{ accessToken?: string }>('/api/account/change-email', {
+        newEmail: em.newEmail,
+        confirmEmail: em.confirmEmail,
+        currentPassword: em.password,
+      });
+      if (res.accessToken) setAccessToken(res.accessToken);
+      setEm({ newEmail: '', confirmEmail: '', password: '' });
+      await loadMe();
+      flash('Email address updated');
+    } catch (e) {
+      setEmError(e instanceof Error ? e.message : 'Failed');
     }
   };
 
@@ -153,6 +175,35 @@ function SettingsInner() {
         {pwError && <p className="mt-3 text-sm text-red-400">{pwError}</p>}
         <button onClick={changePassword} disabled={!pw.current || !pw.next} className="btn-primary mt-4">
           Update password
+        </button>
+      </div>
+
+      {/* Change email */}
+      <div className="card mt-6">
+        <div className="mb-4 flex items-center gap-2">
+          <AtSign size={18} className="text-brand-cyan" />
+          <h2 className="font-semibold text-white">Change email address</h2>
+        </div>
+        <p className="mb-4 text-sm text-ink-muted">
+          Current email: <span className="font-medium text-ink">{user?.email}</span>
+        </p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label className="block">
+            <span className="label">New email</span>
+            <input type="email" value={em.newEmail} onChange={(e) => setEm({ ...em, newEmail: e.target.value })} className="input" placeholder="you@example.com" />
+          </label>
+          <label className="block">
+            <span className="label">Confirm new email</span>
+            <input type="email" value={em.confirmEmail} onChange={(e) => setEm({ ...em, confirmEmail: e.target.value })} className="input" />
+          </label>
+          <label className="block">
+            <span className="label">Current password</span>
+            <input type="password" value={em.password} onChange={(e) => setEm({ ...em, password: e.target.value })} className="input" />
+          </label>
+        </div>
+        {emError && <p className="mt-3 text-sm text-red-400">{emError}</p>}
+        <button onClick={changeEmail} disabled={!em.newEmail || !em.password} className="btn-primary mt-4">
+          Update email
         </button>
       </div>
 

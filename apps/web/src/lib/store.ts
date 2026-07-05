@@ -14,6 +14,11 @@ export interface AuthUser {
   isBroker?: boolean;
   kycStatus?: string;
   twoFactor?: boolean;
+  liveTradingEnabled?: boolean;
+  tradingStatus?: 'ACTIVE' | 'SUSPENDED';
+  tradingPermission?: 'FULL' | 'READ_ONLY';
+  accountStatus?: 'ACTIVE' | 'SUSPENDED' | 'PENDING';
+  canLiveTrade?: boolean;
 }
 
 interface AuthState {

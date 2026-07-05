@@ -22,7 +22,7 @@ const ID_TYPES = [
 function KycInner() {
   const { user, loadMe } = useAuth();
   const [state, setState] = useState<KycState | null>(null);
-  const [form, setForm] = useState({ fullName: '', country: '', idType: 'PASSPORT', idNumber: '', dob: '' });
+  const [form, setForm] = useState({ fullName: '', country: '', idType: 'PASSPORT', addressLine1: '', addressLine2: '', dob: '' });
   const [doc, setDoc] = useState<{ name: string; type: string; data: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -127,8 +127,12 @@ function KycInner() {
                 <input type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} className="input" required />
               </label>
               <label className="block">
-                <span className="label">ID number</span>
-                <input value={form.idNumber} onChange={(e) => setForm({ ...form, idNumber: e.target.value })} className="input" required />
+                <span className="label">Address line 1</span>
+                <input value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} className="input" placeholder="Street address" required />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="label">Address line 2 <span className="text-ink-muted">(optional)</span></span>
+                <input value={form.addressLine2} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} className="input" placeholder="Apartment, suite, city, postcode" />
               </label>
             </div>
 

@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
 import { audit } from '../lib/audit';
 import { generateBase32Secret, otpauthUri, verifyTotp } from '../lib/totp';
-import { hashPassword, verifyPassword } from '../lib/auth';
+import { hashPassword, verifyPassword, issueSession } from '../lib/auth';
 import { getPrice, getPrices } from '../lib/marketPrice';
 import { subscribe, publishBalance } from '../lib/events';
 import {
@@ -95,8 +95,22 @@ const orderSchema = z.object({
   takeProfit: z.number().positive().optional(),
 });
 
+const LIVE_DISABLED_MSG = 'Live trading has not yet been enabled for your account. Please contact support or wait for administrator activation.';
+
+// Whether the authenticated user may place Live-mode orders. A Super Admin
+// always can; everyone else needs admin-granted access with full permission
+// and an active trading + account status.
+function canLiveTrade(user: NonNullable<import('express').Request['user']>): boolean {
+  if (user.isSuperAdmin) return true;
+  return user.liveTradingEnabled && user.tradingStatus === 'ACTIVE' && user.tradingPermission === 'FULL' && user.accountStatus !== 'SUSPENDED';
+}
+
 router.post('/orders', async (req, res) => {
   const mode = getMode(req);
+  // Live trading is gated per-user by an administrator (Demo is always open).
+  if (mode === 'LIVE' && !canLiveTrade(req.user!)) {
+    return res.status(403).json({ error: LIVE_DISABLED_MSG });
+  }
   const parsed = orderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
   const { symbol, side, type, price, amount, leverage, stopLoss, takeProfit } = parsed.data;
@@ -461,7 +475,8 @@ router.post('/kyc', async (req, res) => {
     fullName: z.string().min(2),
     country: z.string().min(2),
     idType: z.enum(['PASSPORT', 'NATIONAL_ID', 'DRIVERS_LICENSE']),
-    idNumber: z.string().min(3),
+    addressLine1: z.string().min(3, 'Address line 1 is required'),
+    addressLine2: z.string().optional(),
     dob: z.string().min(4),
     documentName: z.string().optional(),
     documentType: z.string().optional(),
@@ -489,9 +504,49 @@ router.post('/change-password', async (req, res) => {
   if (!user || !(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
     return res.status(400).json({ error: 'Current password is incorrect' });
   }
-  await prisma.user.update({ where: { id: req.user!.id }, data: { passwordHash: await hashPassword(parsed.data.newPassword) } });
+  // Bump tokenVersion so every other logged-in session is signed out, then
+  // re-issue this session so the current user stays logged in.
+  const updated = await prisma.user.update({
+    where: { id: req.user!.id },
+    data: { passwordHash: await hashPassword(parsed.data.newPassword), tokenVersion: { increment: 1 } },
+    select: { id: true, email: true, tokenVersion: true },
+  });
+  const accessToken = issueSession(res, updated);
   await audit({ actorId: req.user!.id, action: 'password.change', target: req.user!.id, ip: req.ip });
-  res.json({ ok: true });
+  res.json({ ok: true, accessToken });
+});
+
+// POST /api/account/change-email — password-confirmed email change.
+// (Email-verification delivery is not configured on this demo deployment, so
+// the change applies immediately after re-authentication; the switch to a
+// token-verified flow only needs an SMTP transport.)
+router.post('/change-email', async (req, res) => {
+  const schema = z.object({
+    newEmail: z.string().email('Enter a valid email'),
+    confirmEmail: z.string().email(),
+    currentPassword: z.string().min(1),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+  const { newEmail, confirmEmail, currentPassword } = parsed.data;
+  if (newEmail.toLowerCase() !== confirmEmail.toLowerCase()) return res.status(400).json({ error: 'The email addresses do not match.' });
+
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { passwordHash: true, email: true } });
+  if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) {
+    return res.status(400).json({ error: 'Current password is incorrect' });
+  }
+  if (newEmail.toLowerCase() === user.email.toLowerCase()) return res.status(400).json({ error: 'That is already your email address.' });
+  const taken = await prisma.user.findUnique({ where: { email: newEmail } });
+  if (taken) return res.status(409).json({ error: 'That email address is already in use.' });
+
+  const updated = await prisma.user.update({
+    where: { id: req.user!.id },
+    data: { email: newEmail, tokenVersion: { increment: 1 } },
+    select: { id: true, email: true, tokenVersion: true },
+  });
+  const accessToken = issueSession(res, updated);
+  await audit({ actorId: req.user!.id, action: 'email.change', target: req.user!.id, meta: { from: user.email, to: newEmail }, ip: req.ip });
+  res.json({ ok: true, email: newEmail, accessToken });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Search, Shield, X, UserCog, Ban, CheckCircle2, Trash2, DollarSign } from 'lucide-react';
+import { Search, Shield, X, UserCog, Ban, CheckCircle2, Trash2, DollarSign, Zap, KeyRound } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,9 @@ interface AdminUser {
   fullName: string;
   status: string;
   kycStatus: string;
+  liveTradingEnabled: boolean;
+  tradingStatus: 'ACTIVE' | 'SUSPENDED';
+  tradingPermission: 'FULL' | 'READ_ONLY';
   createdAt: string;
   roles: { key: string; name: string; isAdmin: boolean }[];
 }
@@ -36,6 +39,8 @@ export default function AdminUsersPage() {
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [creditTarget, setCreditTarget] = useState<AdminUser | null>(null);
   const [creditForm, setCreditForm] = useState({ asset: 'USDT', mode: 'LIVE', amount: '' });
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [resetForm, setResetForm] = useState({ pw: '', confirm: '' });
   const [toast, setToast] = useState<string | null>(null);
 
   const loadUsers = useCallback(async (q = '') => {
@@ -108,6 +113,30 @@ export default function AdminUsersPage() {
       await api.post(`/api/admin/users/${creditTarget.id}/credit`, { asset: creditForm.asset, amount, mode: creditForm.mode });
       showToast(`Added ${amount.toLocaleString()} ${creditForm.asset} to ${creditTarget.fullName} (${creditForm.mode})`);
       setCreditTarget(null);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const setAccess = async (u: AdminUser, patch: Partial<{ liveTradingEnabled: boolean; tradingStatus: string; tradingPermission: string; accountStatus: string }>) => {
+    try {
+      await api.patch(`/api/admin/users/${u.id}/trading-access`, patch);
+      showToast('Live trading access updated');
+      await loadUsers(search);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const submitReset = async () => {
+    if (!resetTarget) return;
+    if (resetForm.pw.length < 8) return showToast('Password must be at least 8 characters');
+    if (resetForm.pw !== resetForm.confirm) return showToast('Passwords do not match');
+    try {
+      await api.post(`/api/admin/users/${resetTarget.id}/reset-password`, { newPassword: resetForm.pw });
+      showToast(`Password reset for ${resetTarget.fullName}`);
+      setResetTarget(null);
+      setResetForm({ pw: '', confirm: '' });
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Failed');
     }
@@ -194,9 +223,18 @@ export default function AdminUsersPage() {
                           <DollarSign size={14} /> Add funds
                         </button>
                       )}
-                      {canAssign && (
+                      {(canAssign || canManage) && (
                         <button onClick={() => setSelected(u)} className="btn-ghost px-3 py-1.5 text-xs">
-                          <UserCog size={14} /> Roles
+                          <UserCog size={14} /> Manage
+                        </button>
+                      )}
+                      {canManage && (
+                        <button
+                          onClick={() => setAccess(u, { liveTradingEnabled: !u.liveTradingEnabled })}
+                          title={u.liveTradingEnabled ? 'Disable live trading' : 'Enable live trading'}
+                          className={cn('btn-ghost px-2.5 py-1.5 text-xs', u.liveTradingEnabled ? 'text-brand-emerald' : 'text-ink-muted')}
+                        >
+                          <Zap size={14} />
                         </button>
                       )}
                       {canManage && (
@@ -218,8 +256,8 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      {/* Role-assignment drawer */}
-      {selectedLive && canAssign && (
+      {/* Manage drawer — roles, live-trading access and password reset */}
+      {selectedLive && (canAssign || canManage) && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={() => setSelected(null)}>
           <div
             className="h-full w-full max-w-md overflow-y-auto border-l border-white/10 bg-bg-surface p-6"
@@ -227,14 +265,65 @@ export default function AdminUsersPage() {
           >
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-lg font-bold text-white">Manage roles</h2>
-                <p className="text-sm text-slate-400">{selectedLive.fullName}</p>
+                <h2 className="text-lg font-bold text-white">Manage user</h2>
+                <p className="text-sm text-slate-400">{selectedLive.fullName} · {selectedLive.email}</p>
               </div>
               <button onClick={() => setSelected(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5">
                 <X size={18} />
               </button>
             </div>
 
+            {/* Live Trading Access */}
+            {canManage && (
+              <div className="mt-5 rounded-xl border border-brand-blue/15 bg-brand-blue/5 p-4">
+                <h3 className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-brand-blue">
+                  <Zap size={13} /> Live Trading Access
+                </h3>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-ink-soft">Live Trading Enabled</span>
+                  <button
+                    onClick={() => setAccess(selectedLive, { liveTradingEnabled: !selectedLive.liveTradingEnabled })}
+                    className={cn('relative h-6 w-11 rounded-full transition', selectedLive.liveTradingEnabled ? 'bg-brand-emerald' : 'bg-white/15')}
+                  >
+                    <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', selectedLive.liveTradingEnabled ? 'left-[22px]' : 'left-0.5')} />
+                  </button>
+                </div>
+                <div className="mt-2 space-y-3 border-t border-white/5 pt-3">
+                  {([
+                    ['Trading permission', 'tradingPermission', [['FULL', 'Full trading'], ['READ_ONLY', 'Read only']]],
+                    ['Trading status', 'tradingStatus', [['ACTIVE', 'Active'], ['SUSPENDED', 'Suspended']]],
+                    ['Account status', 'accountStatus', [['ACTIVE', 'Active'], ['SUSPENDED', 'Suspended'], ['PENDING', 'Pending']]],
+                  ] as const).map(([label, field, opts]) => {
+                    const current = field === 'accountStatus' ? selectedLive.status : (selectedLive as unknown as Record<string, string>)[field];
+                    return (
+                      <div key={field}>
+                        <div className="mb-1 text-xs text-ink-muted">{label}</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {opts.map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              onClick={() => setAccess(selectedLive, { [field]: val })}
+                              className={cn('rounded-lg px-2.5 py-1 text-xs font-medium transition', current === val ? 'bg-brand-blue text-white' : 'bg-white/5 text-ink-muted hover:text-ink')}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={() => { setResetTarget(selectedLive); setResetForm({ pw: '', confirm: '' }); }}
+                  className="btn-ghost mt-4 w-full text-xs"
+                >
+                  <KeyRound size={13} /> Reset password
+                </button>
+              </div>
+            )}
+
+            {canAssign && (
+            <>
             <div className="mt-5">
               <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Current roles</h3>
               <div className="flex flex-wrap gap-2">
@@ -280,6 +369,8 @@ export default function AdminUsersPage() {
                 })}
               </div>
             </div>
+            </>
+            )}
           </div>
         </div>
       )}
@@ -320,6 +411,27 @@ export default function AdminUsersPage() {
             <div className="mt-5 flex gap-2">
               <button onClick={() => setCreditTarget(null)} className="btn-ghost flex-1">Cancel</button>
               <button onClick={submitCredit} className="btn-primary flex-1">Add funds</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset password modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setResetTarget(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-bg-surface p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="flex items-center gap-2 text-lg font-bold text-white"><KeyRound size={18} className="text-brand-gold" /> Reset password</h2>
+            <p className="mt-1 text-sm text-slate-400">For {resetTarget.fullName} ({resetTarget.email})</p>
+            <p className="mt-2 text-xs text-ink-muted">The user will be signed out of all sessions and must log in with the new password.</p>
+
+            <label className="label mt-4">New password</label>
+            <input type="password" value={resetForm.pw} onChange={(e) => setResetForm((f) => ({ ...f, pw: e.target.value }))} placeholder="At least 8 characters" className="input" autoFocus />
+            <label className="label mt-3">Confirm password</label>
+            <input type="password" value={resetForm.confirm} onChange={(e) => setResetForm((f) => ({ ...f, confirm: e.target.value }))} className="input" />
+
+            <div className="mt-5 flex gap-2">
+              <button onClick={() => setResetTarget(null)} className="btn-ghost flex-1">Cancel</button>
+              <button onClick={submitReset} disabled={!resetForm.pw || !resetForm.confirm} className="btn-primary flex-1">Reset password</button>
             </div>
           </div>
         </div>

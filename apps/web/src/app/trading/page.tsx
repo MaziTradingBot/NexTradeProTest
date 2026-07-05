@@ -48,8 +48,8 @@ function TradingTerminal() {
   const { mode } = useMode();
   const isLive = mode === 'LIVE';
   const { summary, refresh } = useTradingAccount();
-  // Live trading is fully operational and runs against the live account.
-  const tradingLocked = false;
+  // Live trading requires per-user admin activation. Demo is always open.
+  const tradingLocked = isLive && !!user && !user.canLiveTrade;
 
   const [symbol, setSymbol] = useState((params.get('symbol') || 'BTCUSDT').toUpperCase());
   const ticker = tickers.find((t) => t.symbol === symbol);
@@ -219,6 +219,19 @@ function TradingTerminal() {
           {isLive ? 'Live Mode' : 'Simulated execution'}
         </span>
       </div>
+
+      {tradingLocked && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-brand-blue/25 bg-brand-blue/10 px-4 py-3 text-sm text-ink-soft">
+          <span className="mt-0.5">🔒</span>
+          <div>
+            <div className="font-semibold text-ink">Live trading not yet enabled</div>
+            <p className="mt-0.5">
+              Live trading has not yet been enabled for your account. Please contact support or wait for
+              administrator activation. You can still manage your wallet, deposits, withdrawals and settings.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Account summary — professional trading metrics, live-updated */}
       {user && summary && metrics && (
@@ -552,7 +565,7 @@ function TradingTerminal() {
             )}
           >
             {tradingLocked
-              ? 'Unavailable in Live Mode'
+              ? 'Live trading not enabled'
               : `${market === 'FUTURES' ? `${side === 'BUY' ? 'Long' : 'Short'} ${leverage}x` : side === 'BUY' ? 'Buy' : 'Sell'} ${assetName(symbol)}`}
           </button>
 

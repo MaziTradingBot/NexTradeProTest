@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { publishBalance } from '../lib/events';
 import { authenticate, requireAdmin, requirePermission } from '../middleware/auth';
 import { audit } from '../lib/audit';
+import { hashPassword } from '../lib/auth';
 
 const router = Router();
 
@@ -129,11 +130,101 @@ router.get('/users', requirePermission('users.view'), async (req, res) => {
       fullName: u.fullName,
       status: u.status,
       kycStatus: u.kycStatus,
+      liveTradingEnabled: u.liveTradingEnabled,
+      tradingStatus: u.tradingStatus,
+      tradingPermission: u.tradingPermission,
       createdAt: u.createdAt,
       lastLoginAt: u.lastLoginAt,
       roles: u.roles.map((r) => ({ key: r.role.key, name: r.role.name, isAdmin: r.role.isAdmin })),
     })),
   );
+});
+
+// PATCH /api/admin/users/:id/trading-access — Live Trading access control.
+// Toggle live-trading access, trading status/permission and account status.
+router.patch('/users/:id/trading-access', requirePermission('users.manage'), async (req, res) => {
+  const parsed = z
+    .object({
+      liveTradingEnabled: z.boolean().optional(),
+      tradingStatus: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
+      tradingPermission: z.enum(['FULL', 'READ_ONLY']).optional(),
+      accountStatus: z.enum(['ACTIVE', 'SUSPENDED', 'PENDING']).optional(),
+    })
+    .safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid trading-access update' });
+
+  const prev = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    select: { liveTradingEnabled: true, tradingStatus: true, tradingPermission: true, status: true },
+  });
+  if (!prev) return res.status(404).json({ error: 'User not found' });
+
+  const data: Prisma.UserUpdateInput = {};
+  if (parsed.data.liveTradingEnabled !== undefined) data.liveTradingEnabled = parsed.data.liveTradingEnabled;
+  if (parsed.data.tradingStatus) data.tradingStatus = parsed.data.tradingStatus;
+  if (parsed.data.tradingPermission) data.tradingPermission = parsed.data.tradingPermission;
+  if (parsed.data.accountStatus) data.status = parsed.data.accountStatus;
+
+  const updated = await prisma.user.update({ where: { id: req.params.id }, data });
+  await audit({
+    actorId: req.user!.id,
+    action: 'user.trading_access',
+    target: req.params.id,
+    meta: {
+      prev: { liveTradingEnabled: prev.liveTradingEnabled, tradingStatus: prev.tradingStatus, tradingPermission: prev.tradingPermission, accountStatus: prev.status },
+      next: { liveTradingEnabled: updated.liveTradingEnabled, tradingStatus: updated.tradingStatus, tradingPermission: updated.tradingPermission, accountStatus: updated.status },
+    },
+    ip: req.ip,
+  });
+  await prisma.notification
+    .create({
+      data: {
+        userId: req.params.id,
+        title: updated.liveTradingEnabled ? 'Live trading enabled' : 'Live trading access updated',
+        body: updated.liveTradingEnabled
+          ? 'An administrator has enabled Live Trading on your account. You can now open live positions.'
+          : 'Your live trading access was updated by an administrator.',
+        type: updated.liveTradingEnabled ? 'SUCCESS' : 'INFO',
+      },
+    })
+    .catch(() => {});
+  publishBalance(req.params.id, 'trading.access', 'LIVE');
+  res.json({
+    ok: true,
+    user: {
+      id: updated.id,
+      liveTradingEnabled: updated.liveTradingEnabled,
+      tradingStatus: updated.tradingStatus,
+      tradingPermission: updated.tradingPermission,
+      accountStatus: updated.status,
+    },
+  });
+});
+
+// POST /api/admin/users/:id/reset-password — set a new password without the old
+// one. Invalidates all of the user's sessions and records an audit entry.
+router.post('/users/:id/reset-password', requirePermission('users.manage'), async (req, res) => {
+  const parsed = z.object({ newPassword: z.string().min(8, 'Password must be at least 8 characters') }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+  const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, email: true, fullName: true } });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  await prisma.user.update({
+    where: { id: req.params.id },
+    data: { passwordHash: await hashPassword(parsed.data.newPassword), tokenVersion: { increment: 1 } },
+  });
+  await prisma.notification
+    .create({ data: { userId: req.params.id, title: 'Your password was reset', body: 'An administrator reset your password. Please sign in again with the new password.', type: 'WARNING' } })
+    .catch(() => {});
+  await audit({
+    actorId: req.user!.id,
+    action: 'user.password_reset',
+    target: req.params.id,
+    meta: { adminEmail: req.user!.email, clientEmail: target.email, clientName: target.fullName },
+    ip: req.ip,
+  });
+  res.json({ ok: true });
 });
 
 const assignSchema = z.object({ roleKey: z.string().min(1) });

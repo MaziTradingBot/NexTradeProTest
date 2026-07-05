@@ -126,26 +126,20 @@ function DashboardInner() {
         </div>
       </div>
 
-      {/* Mode notice */}
-      <div
-        className={cn(
-          'mt-5 rounded-xl border px-4 py-3 text-sm',
-          mode === 'DEMO' ? 'border-brand-emerald/25 bg-brand-emerald/10 text-slate-200' : 'border-brand-blue/25 bg-brand-blue/10 text-slate-200',
-        )}
-      >
-        {mode === 'DEMO' ? (
-          <>
-            <span className="font-semibold text-white">You are using Demo Mode.</span> All balances, trades, deposits,
-            withdrawals, analytics and transaction references are simulated for demonstration and educational purposes.
-          </>
-        ) : (
-          <>
-            <span className="font-semibold text-white">You are using Live Mode.</span> Trading is available once exchange
-            integrations, compliance requirements and administrator activation have been completed. You can still manage
-            your profile, wallets, deposit &amp; withdrawal requests, and security settings.
-          </>
-        )}
-      </div>
+      {/* Mode notice — Demo disclaimer, or a simple activation notice only when
+          Live trading has not yet been enabled for this account. */}
+      {mode === 'DEMO' ? (
+        <div className="mt-5 rounded-xl border border-brand-emerald/25 bg-brand-emerald/10 px-4 py-3 text-sm text-ink-soft">
+          <span className="font-semibold text-ink">You are using Demo Mode.</span> All balances, trades, deposits,
+          withdrawals, analytics and transaction references are simulated for demonstration and educational purposes.
+        </div>
+      ) : user && !user.canLiveTrade ? (
+        <div className="mt-5 rounded-xl border border-brand-blue/25 bg-brand-blue/10 px-4 py-3 text-sm text-ink-soft">
+          <span className="font-semibold text-ink">Live trading not yet enabled.</span> Live trading has not yet been
+          enabled for your account. Please contact support or wait for administrator activation. You can still manage
+          your wallet, deposits, withdrawals, KYC and settings.
+        </div>
+      ) : null}
 
       {/* Portfolio summary */}
       <div className="mt-6 grid gap-4 sm:grid-cols-3">

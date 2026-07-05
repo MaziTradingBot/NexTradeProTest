@@ -27,6 +27,16 @@ enum KycStatus {
   REJECTED
 }
 
+enum TradingStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum TradingPermission {
+  FULL
+  READ_ONLY
+}
+
 model User {
   id            String     @id @default(cuid())
   email         String     @unique
@@ -41,6 +51,16 @@ model User {
   referredById    String?
   brokerId        String?
   demoMode      Boolean    @default(true)
+  // Per-user Live Trading access control (admin-managed).
+  liveTradingEnabled Boolean           @default(false)
+  tradingStatus      TradingStatus     @default(ACTIVE)
+  tradingPermission  TradingPermission @default(FULL)
+  // Bumped to invalidate all outstanding access/refresh tokens (password reset,
+  // password change, email change).
+  tokenVersion  Int        @default(0)
+  // Password reset (forgot-password) — single-use, time-limited token hash.
+  resetTokenHash String?
+  resetTokenExp  DateTime?
   lastLoginAt   DateTime?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -311,7 +331,9 @@ model KycSubmission {
   fullName     String
   country      String
   idType       String // PASSPORT, NATIONAL_ID, DRIVERS_LICENSE
-  idNumber     String
+  idNumber     String? // deprecated — replaced by residential address
+  addressLine1 String?
+  addressLine2 String?
   dob          String
   documentName String?
   documentType String? // image/png, image/jpeg, application/pdf ...

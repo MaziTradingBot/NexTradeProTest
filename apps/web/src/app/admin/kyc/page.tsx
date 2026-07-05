@@ -9,7 +9,9 @@ interface Submission {
   fullName: string;
   country: string;
   idType: string;
-  idNumber: string;
+  idNumber: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
   dob: string;
   documentName: string | null;
   documentType: string | null;
@@ -117,7 +119,8 @@ export default function AdminKycPage() {
                     ['Country', sel.submission.country],
                     ['Date of birth', sel.submission.dob],
                     ['Document type', sel.submission.idType.replace('_', ' ')],
-                    ['ID number', sel.submission.idNumber],
+                    ['Address line 1', sel.submission.addressLine1 ?? sel.submission.idNumber ?? '—'],
+                    ['Address line 2', sel.submission.addressLine2 ?? '—'],
                   ].map(([k, v]) => (
                     <div key={k} className="flex justify-between gap-3"><span className="text-slate-400">{k}</span><span className="text-right text-white">{v}</span></div>
                   ))}

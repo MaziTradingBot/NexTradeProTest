@@ -9,6 +9,10 @@ export interface AuthUser {
   permissions: Set<string>;
   roles: { key: string; name: string; isAdmin: boolean }[];
   isSuperAdmin: boolean;
+  liveTradingEnabled: boolean;
+  tradingStatus: 'ACTIVE' | 'SUSPENDED';
+  tradingPermission: 'FULL' | 'READ_ONLY';
+  accountStatus: 'ACTIVE' | 'SUSPENDED' | 'PENDING';
 }
 
 declare global {
@@ -46,6 +50,11 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     if (!user || user.status === 'SUSPENDED') {
       return res.status(401).json({ error: 'Account unavailable' });
     }
+    // Reject tokens issued before the current version (password/email change,
+    // admin password reset) — forces a fresh login.
+    if ((payload.tv ?? 0) !== user.tokenVersion) {
+      return res.status(401).json({ error: 'Session expired, please sign in again' });
+    }
 
     const permissions = new Set<string>();
     let isSuperAdmin = false;
@@ -62,6 +71,10 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       permissions,
       roles,
       isSuperAdmin,
+      liveTradingEnabled: user.liveTradingEnabled,
+      tradingStatus: user.tradingStatus,
+      tradingPermission: user.tradingPermission,
+      accountStatus: user.status,
     };
     return next();
   } catch {
