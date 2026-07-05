@@ -5,15 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Logo } from '@/components/Logo';
+import { GoogleSignIn } from '@/components/GoogleSignIn';
 import { useAuth } from '@/lib/store';
-
-const DEMO_ACCOUNTS = [['Super Admin', 'super@nextradepro.com']];
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('Password123!');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -67,28 +66,14 @@ export default function LoginPage() {
             </button>
           </form>
 
+          <GoogleSignIn label="signin_with" />
+
           <p className="mt-5 text-center text-sm text-slate-400">
             No account?{' '}
             <Link href="/register" className="font-medium text-brand-blue hover:underline">
               Create one
             </Link>
           </p>
-        </div>
-
-        <div className="card mt-4">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Demo accounts (password: Password123!)</p>
-          <div className="grid grid-cols-2 gap-2">
-            {DEMO_ACCOUNTS.map(([label, mail]) => (
-              <button
-                key={mail}
-                onClick={() => setEmail(mail)}
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/10"
-              >
-                <div className="font-medium text-white">{label}</div>
-                <div className="truncate text-slate-500">{mail}</div>
-              </button>
-            ))}
-          </div>
         </div>
       </div>
     </main>

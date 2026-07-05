@@ -131,6 +131,71 @@ router.post('/login', async (req, res) => {
   });
 });
 
+// POST /api/auth/google — sign in / sign up with a Google ID token.
+// The frontend obtains the token from Google Identity Services and posts it
+// here; we verify it against Google, then find or create the matching user.
+router.post('/google', async (req, res) => {
+  const parsed = z.object({ credential: z.string().min(20) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Missing Google credential' });
+
+  // Verify the ID token with Google (no extra dependency needed).
+  let info: { aud?: string; email?: string; email_verified?: string | boolean; name?: string; sub?: string };
+  try {
+    const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(parsed.data.credential)}`);
+    if (!resp.ok) throw new Error('bad token');
+    info = (await resp.json()) as typeof info;
+  } catch {
+    return res.status(401).json({ error: 'Could not verify Google sign-in' });
+  }
+
+  const expectedAud = process.env.GOOGLE_CLIENT_ID;
+  if (expectedAud && info.aud !== expectedAud) return res.status(401).json({ error: 'Google credential was issued for a different app' });
+  if (!info.email || (info.email_verified !== true && info.email_verified !== 'true')) {
+    return res.status(401).json({ error: 'Your Google email is not verified' });
+  }
+  const email = info.email.toLowerCase();
+  const fullName = info.name || email.split('@')[0];
+
+  let user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    // First-time Google user — provision an account (random password) with the
+    // same starter wallets a normal registration receives.
+    const userRole = await prisma.role.findUnique({ where: { key: 'USER' } });
+    user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await hashPassword(crypto.randomBytes(24).toString('hex')),
+        fullName,
+        referralCode: genReferralCode(),
+        roles: userRole ? { create: { roleId: userRole.id } } : undefined,
+        notifications: { create: [{ title: 'Welcome to NexTradePro 🎉', body: 'Your demo account is ready. Explore the trading terminal and AI assistant.', type: 'SUCCESS' }] },
+        wallets: {
+          create: [
+            { asset: 'USDT', mode: 'DEMO', balance: 100000 },
+            { asset: 'BTC', mode: 'DEMO', balance: 1.5 },
+            { asset: 'ETH', mode: 'DEMO', balance: 20 },
+            { asset: 'SOL', mode: 'DEMO', balance: 200 },
+            { asset: 'USDT', mode: 'LIVE', balance: 0 },
+            { asset: 'BTC', mode: 'LIVE', balance: 0 },
+            { asset: 'ETH', mode: 'LIVE', balance: 0 },
+          ],
+        },
+      },
+    });
+    await audit({ actorId: user.id, action: 'auth.register.google', target: user.id, ip: req.ip });
+  }
+  if (user.status === 'SUSPENDED') return res.status(403).json({ error: 'Account suspended' });
+
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  await audit({ actorId: user.id, action: 'auth.login.google', target: user.id, ip: req.ip });
+
+  const payload = { sub: user.id, email: user.email, tv: user.tokenVersion };
+  const access = signAccessToken(payload);
+  const refresh = signRefreshToken(payload);
+  setAuthCookies(res, access, refresh);
+  return res.json({ user: { id: user.id, email: user.email, fullName: user.fullName }, accessToken: access });
+});
+
 // POST /api/auth/refresh
 router.post('/refresh', async (req, res) => {
   const token = req.cookies?.nxp_refresh || req.body?.refreshToken;

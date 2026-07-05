@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Logo } from '@/components/Logo';
+import { GoogleSignIn } from '@/components/GoogleSignIn';
 import { useAuth } from '@/lib/store';
 
 export default function RegisterPage() {
@@ -94,6 +95,8 @@ export default function RegisterPage() {
               {loading ? 'Creating account…' : 'Create account'}
             </button>
           </form>
+
+          <GoogleSignIn label="signup_with" />
 
           <p className="mt-5 text-center text-sm text-slate-400">
             Already have an account?{' '}
