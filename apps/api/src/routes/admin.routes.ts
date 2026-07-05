@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
+import { publishBalance } from '../lib/events';
 import { authenticate, requireAdmin, requirePermission } from '../middleware/auth';
 import { audit } from '../lib/audit';
 
@@ -234,21 +235,46 @@ router.post('/users/:id/credit', requirePermission('balances.manage'), async (re
   if (!parsed.success) return res.status(400).json({ error: 'Enter a valid amount' });
   const { asset, amount, mode } = parsed.data;
 
-  const wallet = await prisma.wallet.upsert({
-    where: { userId_asset_mode: { userId: req.params.id, asset, mode } },
-    create: { userId: req.params.id, asset, mode, balance: amount },
-    update: { balance: { increment: amount } },
-  });
-  // For Live credits, also record a completed deposit for the transaction history.
-  if (mode === 'LIVE') {
-    await prisma.transaction.create({
-      data: { userId: req.params.id, mode, type: 'DEPOSIT', asset, amount, status: 'COMPLETED', reference: `AD-${Date.now()}`, note: 'Admin credit' },
+  const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  // Atomic credit: read the previous balance, apply the increment, and log a
+  // completed deposit that records prev → new balance — a single source of
+  // truth with a full audit trail, for both Demo and Live accounts.
+  const { wallet } = await prisma.$transaction(async (tx) => {
+    const existing = await tx.wallet.findUnique({
+      where: { userId_asset_mode: { userId: req.params.id, asset, mode } },
     });
-  }
+    const prevBalance = existing ? parseFloat(existing.balance.toString()) : 0;
+    const wallet = await tx.wallet.upsert({
+      where: { userId_asset_mode: { userId: req.params.id, asset, mode } },
+      create: { userId: req.params.id, asset, mode, balance: amount },
+      update: { balance: { increment: amount } },
+    });
+    await tx.transaction.create({
+      data: {
+        userId: req.params.id,
+        mode,
+        type: 'DEPOSIT',
+        asset,
+        amount,
+        status: 'COMPLETED',
+        reference: `AD-${Date.now()}`,
+        note: `Admin credit by ${req.user!.email} · balance ${prevBalance} → ${prevBalance + amount} ${asset}`,
+        reviewedById: req.user!.id,
+        reviewedAt: new Date(),
+      },
+    });
+    return { wallet, prevBalance };
+  });
+
   await prisma.notification.create({
-    data: { userId: req.params.id, title: `${mode === 'LIVE' ? 'Live' : 'Demo'} balance credited`, body: `${amount} ${asset} was added to your ${mode.toLowerCase()} wallet by an administrator.`, type: 'SUCCESS' },
+    data: { userId: req.params.id, title: `${mode === 'LIVE' ? 'Live' : 'Demo'} balance credited`, body: `${amount} ${asset} was added to your ${mode.toLowerCase()} account by an administrator.`, type: 'SUCCESS' },
   });
   await audit({ actorId: req.user!.id, action: 'balance.credit', target: req.params.id, meta: { asset, amount, mode }, ip: req.ip });
+  // Push the update so the client's dashboard, wallet and trading account
+  // reflect the new balance instantly — no refresh required.
+  publishBalance(req.params.id, 'admin.credit', mode);
   res.json({ ok: true, wallet });
 });
 
@@ -313,6 +339,7 @@ router.post('/withdrawals/:id/review', requirePermission('withdrawals.approve'),
     meta: { amount: txn.amount.toString(), asset: txn.asset },
     ip: req.ip,
   });
+  publishBalance(txn.userId, `withdrawal.${parsed.data.decision.toLowerCase()}`, txn.mode);
 
   res.json({ ok: true, transaction: updated });
 });
@@ -372,6 +399,7 @@ router.post('/withdrawals/:id/status', requirePermission('withdrawals.approve'),
     });
   }
   await audit({ actorId: req.user!.id, action: `withdrawal.${parsed.data.status.toLowerCase()}`, target: txn.id, meta: { status: parsed.data.status }, ip: req.ip });
+  publishBalance(txn.userId, `withdrawal.${parsed.data.status.toLowerCase()}`, txn.mode);
   res.json({ ok: true, transaction: updated });
 });
 

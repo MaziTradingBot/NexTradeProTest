@@ -24,6 +24,8 @@ function extractToken(req: Request): string | null {
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) return header.slice(7);
   if (req.cookies?.nxp_access) return req.cookies.nxp_access as string;
+  // Fallback for EventSource (SSE), which cannot set an Authorization header.
+  if (typeof req.query?.token === 'string') return req.query.token;
   return null;
 }
 

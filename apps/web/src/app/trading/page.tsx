@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Area,
@@ -19,6 +19,7 @@ import { useAuth } from '@/lib/store';
 import { useMode } from '@/lib/useMode';
 import { useTickers, assetName } from '@/lib/useTickers';
 import { useTradingAccount, liveMetrics, positionPnl, type Position } from '@/lib/useTradingAccount';
+import { useLiveSync } from '@/lib/useLiveSync';
 import { formatPercent, cn } from '@/lib/utils';
 
 interface Kline {
@@ -86,6 +87,16 @@ function TradingTerminal() {
     api.get<OpenOrder[]>('/api/account/orders').then(setOpenOrders).catch(() => {});
   };
   useEffect(loadOrders, [user]);
+
+  // Real-time: refetch the account whenever the server signals a balance change
+  // (admin funding, deposits/withdrawals, trade fills) — no refresh needed.
+  useLiveSync(
+    useCallback(() => {
+      refresh();
+      loadWallets();
+      loadOrders();
+    }, [refresh]),
+  );
 
   const cancelOrder = async (id: string) => {
     try {

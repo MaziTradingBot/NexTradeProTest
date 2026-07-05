@@ -7,6 +7,7 @@
 
 import { prisma } from './prisma';
 import { getPrices } from './marketPrice';
+import { publishBalance } from './events';
 import { ACCOUNT_CURRENCY, STOP_OUT_LEVEL, accountMetrics, floatingPnl, round8 } from './trading';
 
 type Reason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'LIQUIDATION';
@@ -30,6 +31,7 @@ async function closePosition(orderId: string, closePrice: number, reason: Reason
     }),
   ]);
 
+  publishBalance(order.userId, `position.${reason.toLowerCase()}`, order.mode);
   const label = reason === 'STOP_LOSS' ? 'Stop loss' : reason === 'TAKE_PROFIT' ? 'Take profit' : 'Liquidation';
   await prisma.notification
     .create({

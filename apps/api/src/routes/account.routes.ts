@@ -6,6 +6,7 @@ import { audit } from '../lib/audit';
 import { generateBase32Secret, otpauthUri, verifyTotp } from '../lib/totp';
 import { hashPassword, verifyPassword } from '../lib/auth';
 import { getPrice, getPrices } from '../lib/marketPrice';
+import { subscribe, publishBalance } from '../lib/events';
 import {
   ACCOUNT_CURRENCY,
   MARGIN_CALL_LEVEL,
@@ -34,6 +35,34 @@ async function usedMarginFor(userId: string, mode: Mode): Promise<number> {
   });
   return agg._sum.margin ? parseFloat(agg._sum.margin.toString()) : 0;
 }
+
+// GET /api/account/stream — Server-Sent Events feed for this account. Pushes a
+// `balance` event whenever the user's wallets/positions change so every open
+// page updates in real time without polling or a manual refresh.
+router.get('/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no', // disable proxy buffering (nginx/Render)
+  });
+  res.write(`event: ready\ndata: ${JSON.stringify({ at: Date.now() })}\n\n`);
+
+  const unsubscribe = subscribe(req.user!.id, res);
+  // Heartbeat keeps the connection alive through idle proxies.
+  const ping = setInterval(() => {
+    try {
+      res.write(`: ping\n\n`);
+    } catch {
+      /* connection gone */
+    }
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(ping);
+    unsubscribe();
+  });
+});
 
 // GET /api/account/wallets
 router.get('/wallets', async (req, res) => {
@@ -116,6 +145,7 @@ router.post('/orders', async (req, res) => {
         });
       });
       await audit({ actorId: req.user!.id, action: 'position.open', target: order.id, meta: { symbol, side, mode, leverage: lev }, ip: req.ip });
+      publishBalance(req.user!.id, 'position.open', mode);
       return res.status(201).json(order);
     } catch (e) {
       if (e && typeof e === 'object' && (e as { code?: string }).code === 'MARGIN') {
@@ -160,6 +190,7 @@ router.post('/orders/:id/close', async (req, res) => {
     }),
   ]);
   await audit({ actorId: req.user!.id, action: 'position.close', target: order.id, meta: { pnl, closePrice }, ip: req.ip });
+  publishBalance(order.userId, 'position.close', order.mode);
   res.json({ ok: true, order: updated, realizedPnl: pnl });
 });
 
@@ -284,6 +315,7 @@ router.post('/withdraw', async (req, res) => {
       });
     });
     await audit({ actorId: req.user!.id, action: 'withdrawal.request', target: txn.id, meta: { mode, amount, asset }, ip: req.ip });
+    publishBalance(req.user!.id, 'withdrawal.request', mode);
     return res.status(201).json(txn);
   } catch (e) {
     if (e && typeof e === 'object' && (e as { code?: string }).code === 'FUNDS') {
@@ -328,6 +360,7 @@ router.post('/deposit', async (req, res) => {
     }),
   ]);
   await audit({ actorId: req.user!.id, action: 'deposit.demo', target: txn.id, ip: req.ip });
+  publishBalance(req.user!.id, 'deposit.demo', mode);
   res.status(201).json(txn);
 });
 

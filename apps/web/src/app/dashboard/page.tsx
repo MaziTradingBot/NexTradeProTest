@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Wallet, ArrowDownToLine, ListOrderedIcon, Shield } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
@@ -9,6 +9,7 @@ import { ModeSwitcher } from '@/components/ModeSwitcher';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useMode } from '@/lib/useMode';
+import { useLiveSync } from '@/lib/useLiveSync';
 import { formatCurrency, cn } from '@/lib/utils';
 
 interface WalletRow {
@@ -50,7 +51,7 @@ function DashboardInner() {
   const [wdAmount, setWdAmount] = useState('');
   const [wdMsg, setWdMsg] = useState<string | null>(null);
 
-  const load = () => {
+  const load = useCallback(() => {
     api.get<WalletRow[]>('/api/account/wallets').then(setWallets).catch(() => {});
     api.get<OrderRow[]>('/api/account/orders').then(setOrders).catch(() => {});
     api.get<TxRow[]>('/api/account/transactions').then(setTxns).catch(() => {});
@@ -58,8 +59,14 @@ function DashboardInner() {
       .get<{ achievements: typeof achievements }>('/api/account/achievements')
       .then((d) => setAchievements(d.achievements))
       .catch(() => {});
-  };
-  useEffect(load, []);
+  }, []);
+  // Refetch on mount and whenever the account mode switches (Demo ↔ Live) so
+  // the dashboard always shows balances for the active account.
+  useEffect(() => {
+    load();
+  }, [load, mode]);
+  // Real-time refresh on any server-side balance change (e.g. admin funding).
+  useLiveSync(load);
 
   const portfolioUsd = wallets.reduce((sum, w) => sum + parseFloat(w.balance) * (REF[w.asset] ?? 0), 0);
 

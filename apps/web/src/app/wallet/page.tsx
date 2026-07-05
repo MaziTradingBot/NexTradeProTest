@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowDownToLine, ArrowUpFromLine, Wallet as WalletIcon } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { api } from '@/lib/api';
+import { useMode } from '@/lib/useMode';
+import { useLiveSync } from '@/lib/useLiveSync';
 import { formatCurrency, cn } from '@/lib/utils';
 
 interface WalletRow {
@@ -36,11 +38,15 @@ function WalletInner() {
   const [msg, setMsg] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAWAL'>('ALL');
 
-  const load = () => {
+  const { mode } = useMode();
+  const load = useCallback(() => {
     api.get<WalletRow[]>('/api/account/wallets').then(setWallets).catch(() => {});
     api.get<TxRow[]>('/api/account/transactions').then(setTxns).catch(() => {});
-  };
-  useEffect(load, []);
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load, mode]);
+  useLiveSync(load);
 
   const total = wallets.reduce((s, w) => s + parseFloat(w.balance) * (REF[w.asset] ?? 0), 0);
 
