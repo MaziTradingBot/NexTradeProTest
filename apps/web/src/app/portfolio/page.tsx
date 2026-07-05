@@ -27,12 +27,30 @@ const PNL = [
   { d: 'Sun', v: 660 },
 ];
 
+interface Stats {
+  totalTrades: number; wins: number; losses: number; winRate: number; lossRate: number;
+  profitFactor: number; realizedPnl: number; bestTrade: number; worstTrade: number;
+  avgDurationMs: number; maxDrawdown: number; sharpe: number;
+  dailyProfit: number; weeklyProfit: number; monthlyProfit: number; roi: number;
+}
+
 function PortfolioInner() {
   const [wallets, setWallets] = useState<WalletRow[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
     api.get<WalletRow[]>('/api/account/wallets').then(setWallets).catch(() => {});
+    api.get<Stats>('/api/account/stats').then(setStats).catch(() => {});
   }, []);
+
+  const fmtDur = (ms: number) => {
+    if (!ms) return '—';
+    const m = Math.round(ms / 60000);
+    if (m < 60) return `${m}m`;
+    const h = Math.round(m / 60);
+    return h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
+  };
+  const pf = stats ? (Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞') : '—';
 
   const alloc = useMemo(
     () =>
@@ -47,9 +65,9 @@ function PortfolioInner() {
 
   const metrics = [
     { label: 'Total value', value: formatCurrency(total) },
-    { label: '7d P&L', value: `${weekPnl >= 0 ? '+' : ''}${formatCurrency(weekPnl)}`, tone: weekPnl >= 0 ? 'pos' : 'neg' },
-    { label: 'Sharpe ratio', value: '1.82' },
-    { label: 'Max drawdown', value: '-8.4%', tone: 'neg' },
+    { label: 'Realized P&L', value: `${(stats?.realizedPnl ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.realizedPnl ?? weekPnl)}`, tone: (stats?.realizedPnl ?? weekPnl) >= 0 ? 'pos' : 'neg' },
+    { label: 'Sharpe ratio', value: stats ? stats.sharpe.toFixed(2) : '—' },
+    { label: 'Max drawdown', value: stats ? `-${formatCurrency(stats.maxDrawdown)}` : '—', tone: 'neg' },
   ];
 
   return (
@@ -127,6 +145,38 @@ function PortfolioInner() {
           </div>
         </div>
       </div>
+
+      {/* Trading statistics */}
+      <div className="card mt-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-semibold text-white">Trading statistics</h2>
+          <span className="text-xs text-ink-muted">{stats?.totalTrades ?? 0} closed trades</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {[
+            { label: 'Win rate', value: stats ? `${stats.winRate.toFixed(1)}%` : '—', tone: 'pos' },
+            { label: 'Loss rate', value: stats ? `${stats.lossRate.toFixed(1)}%` : '—', tone: 'neg' },
+            { label: 'Profit factor', value: pf },
+            { label: 'Total trades', value: String(stats?.totalTrades ?? 0) },
+            { label: 'Best trade', value: stats ? `+${formatCurrency(stats.bestTrade)}` : '—', tone: 'pos' },
+            { label: 'Worst trade', value: stats ? formatCurrency(stats.worstTrade) : '—', tone: 'neg' },
+            { label: 'Avg duration', value: fmtDur(stats?.avgDurationMs ?? 0) },
+            { label: 'Max drawdown', value: stats ? `-${formatCurrency(stats.maxDrawdown)}` : '—', tone: 'neg' },
+            { label: 'Daily P&L', value: stats ? `${stats.dailyProfit >= 0 ? '+' : ''}${formatCurrency(stats.dailyProfit)}` : '—', tone: (stats?.dailyProfit ?? 0) >= 0 ? 'pos' : 'neg' },
+            { label: 'Weekly P&L', value: stats ? `${stats.weeklyProfit >= 0 ? '+' : ''}${formatCurrency(stats.weeklyProfit)}` : '—', tone: (stats?.weeklyProfit ?? 0) >= 0 ? 'pos' : 'neg' },
+            { label: 'Monthly P&L', value: stats ? `${stats.monthlyProfit >= 0 ? '+' : ''}${formatCurrency(stats.monthlyProfit)}` : '—', tone: (stats?.monthlyProfit ?? 0) >= 0 ? 'pos' : 'neg' },
+            { label: 'ROI', value: stats ? `${stats.roi >= 0 ? '+' : ''}${stats.roi.toFixed(1)}%` : '—', tone: (stats?.roi ?? 0) >= 0 ? 'pos' : 'neg' },
+          ].map((m) => (
+            <div key={m.label} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
+              <div className="text-[11px] uppercase tracking-wide text-ink-muted">{m.label}</div>
+              <div className={cn('mt-0.5 font-mono text-sm font-semibold', m.tone === 'pos' ? 'text-brand-emerald' : m.tone === 'neg' ? 'text-red-400' : 'text-white')}>
+                {m.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="h-16" />
     </section>
   );

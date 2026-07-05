@@ -6,6 +6,8 @@ import { publishBalance } from '../lib/events';
 import { authenticate, requireAdmin, requirePermission } from '../middleware/auth';
 import { audit } from '../lib/audit';
 import { hashPassword } from '../lib/auth';
+import { getPrice } from '../lib/marketPrice';
+import { ACCOUNT_CURRENCY, floatingPnl, round8 } from '../lib/trading';
 
 const router = Router();
 
@@ -225,6 +227,141 @@ router.post('/users/:id/reset-password', requirePermission('users.manage'), asyn
     ip: req.ip,
   });
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Admin trading controls (item 20)
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/users/:id/positions — a user's open positions + working orders.
+router.get('/users/:id/positions', requirePermission('users.view'), async (req, res) => {
+  const [positions, orders] = await Promise.all([
+    prisma.order.findMany({ where: { userId: req.params.id, status: 'FILLED', closedAt: null }, orderBy: { createdAt: 'desc' } }),
+    prisma.order.findMany({ where: { userId: req.params.id, status: 'OPEN' }, orderBy: { createdAt: 'desc' } }),
+  ]);
+  res.json({ positions, orders });
+});
+
+// POST /api/admin/positions/:orderId/force-close — close a user's open position.
+router.post('/positions/:orderId/force-close', requirePermission('users.manage'), async (req, res) => {
+  const order = await prisma.order.findUnique({ where: { id: req.params.orderId } });
+  if (!order) return res.status(404).json({ error: 'Position not found' });
+  if (order.status !== 'FILLED' || order.closedAt) return res.status(409).json({ error: 'Position is not open' });
+
+  const live = await getPrice(order.symbol).catch(() => null);
+  const closePrice = live ?? parseFloat(order.price.toString());
+  const pnl = round8(floatingPnl(order.side, order.price, order.amount, closePrice));
+  await prisma.$transaction([
+    prisma.order.update({ where: { id: order.id }, data: { status: 'CLOSED', closePrice, realizedPnl: pnl, closeReason: 'LIQUIDATION', closedAt: new Date() } }),
+    prisma.wallet.upsert({
+      where: { userId_asset_mode: { userId: order.userId, asset: ACCOUNT_CURRENCY, mode: order.mode } },
+      create: { userId: order.userId, asset: ACCOUNT_CURRENCY, mode: order.mode, balance: pnl },
+      update: { balance: { increment: pnl } },
+    }),
+  ]);
+  await prisma.notification.create({ data: { userId: order.userId, title: 'Position force-closed', body: `An administrator closed your ${order.side} ${order.symbol} position at ${closePrice} (P/L ${pnl.toFixed(2)} ${ACCOUNT_CURRENCY}).`, type: 'WARNING' } }).catch(() => {});
+  await audit({ actorId: req.user!.id, action: 'position.force_close', target: order.id, meta: { pnl, closePrice, userId: order.userId }, ip: req.ip });
+  publishBalance(order.userId, 'position.force_close', order.mode);
+  res.json({ ok: true, realizedPnl: pnl });
+});
+
+// PATCH /api/admin/positions/:orderId/leverage — adjust an open position's
+// leverage (recomputes reserved margin).
+router.patch('/positions/:orderId/leverage', requirePermission('users.manage'), async (req, res) => {
+  const parsed = z.object({ leverage: z.number().int().min(1).max(125) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid leverage' });
+  const order = await prisma.order.findUnique({ where: { id: req.params.orderId } });
+  if (!order || order.status !== 'FILLED' || order.closedAt) return res.status(404).json({ error: 'Open position not found' });
+  const notional = parseFloat(order.price.toString()) * parseFloat(order.amount.toString());
+  const newMargin = round8(notional / parsed.data.leverage);
+  const updated = await prisma.order.update({ where: { id: order.id }, data: { leverage: parsed.data.leverage, margin: newMargin } });
+  await audit({ actorId: req.user!.id, action: 'position.adjust_leverage', target: order.id, meta: { from: order.leverage, to: parsed.data.leverage }, ip: req.ip });
+  publishBalance(order.userId, 'position.adjust_leverage', order.mode);
+  res.json({ ok: true, order: updated });
+});
+
+// POST /api/admin/users/:id/adjust-balance — signed balance adjustment
+// (credit or debit) with an audited previous → new record.
+router.post('/users/:id/adjust-balance', requirePermission('balances.manage'), async (req, res) => {
+  const parsed = z.object({ asset: z.string().min(2).default('USDT'), amount: z.number(), mode: z.enum(['DEMO', 'LIVE']).default('LIVE'), reason: z.string().max(200).optional() }).safeParse(req.body);
+  if (!parsed.success || parsed.data.amount === 0) return res.status(400).json({ error: 'Enter a non-zero amount' });
+  const { asset, amount, mode, reason } = parsed.data;
+
+  try {
+    const wallet = await prisma.$transaction(async (tx) => {
+      const existing = await tx.wallet.findUnique({ where: { userId_asset_mode: { userId: req.params.id, asset, mode } } });
+      const prev = existing ? parseFloat(existing.balance.toString()) : 0;
+      if (prev + amount < -1e-8) throw Object.assign(new Error('Adjustment would make the balance negative.'), { code: 'NEG' });
+      const w = await tx.wallet.upsert({
+        where: { userId_asset_mode: { userId: req.params.id, asset, mode } },
+        create: { userId: req.params.id, asset, mode, balance: amount },
+        update: { balance: { increment: amount } },
+      });
+      await tx.transaction.create({
+        data: { userId: req.params.id, mode, type: amount >= 0 ? 'DEPOSIT' : 'WITHDRAWAL', asset, amount: Math.abs(amount), status: 'COMPLETED', reference: `ADJ-${Date.now()}`, note: `Admin adjustment by ${req.user!.email}: ${prev} → ${prev + amount} ${asset}${reason ? ` (${reason})` : ''}`, reviewedById: req.user!.id, reviewedAt: new Date() },
+      });
+      return w;
+    });
+    await audit({ actorId: req.user!.id, action: 'balance.adjust', target: req.params.id, meta: { asset, amount, mode }, ip: req.ip });
+    publishBalance(req.params.id, 'balance.adjust', mode);
+    res.json({ ok: true, wallet });
+  } catch (e) {
+    if (e && (e as { code?: string }).code === 'NEG') return res.status(400).json({ error: (e as Error).message });
+    throw e;
+  }
+});
+
+// POST /api/admin/transfer — move funds between two users' wallets.
+router.post('/transfer', requirePermission('balances.manage'), async (req, res) => {
+  const parsed = z.object({ fromId: z.string().min(1), toId: z.string().min(1), asset: z.string().min(2).default('USDT'), amount: z.number().positive(), mode: z.enum(['DEMO', 'LIVE']).default('LIVE') }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid transfer' });
+  const { fromId, toId, asset, amount, mode } = parsed.data;
+  if (fromId === toId) return res.status(400).json({ error: 'Cannot transfer to the same account' });
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const from = await tx.wallet.findUnique({ where: { userId_asset_mode: { userId: fromId, asset, mode } } });
+      if (!from || parseFloat(from.balance.toString()) < amount) throw Object.assign(new Error('Sender has insufficient balance.'), { code: 'FUNDS' });
+      await tx.wallet.update({ where: { userId_asset_mode: { userId: fromId, asset, mode } }, data: { balance: { decrement: amount } } });
+      await tx.wallet.upsert({ where: { userId_asset_mode: { userId: toId, asset, mode } }, create: { userId: toId, asset, mode, balance: amount }, update: { balance: { increment: amount } } });
+      await tx.transaction.createMany({
+        data: [
+          { userId: fromId, mode, type: 'TRANSFER', asset, amount, status: 'COMPLETED', reference: `TRF-${Date.now()}`, note: `Admin transfer to ${toId}` },
+          { userId: toId, mode, type: 'TRANSFER', asset, amount, status: 'COMPLETED', reference: `TRF-${Date.now()}`, note: `Admin transfer from ${fromId}` },
+        ],
+      });
+    });
+    await audit({ actorId: req.user!.id, action: 'balance.transfer', target: toId, meta: { fromId, toId, asset, amount, mode }, ip: req.ip });
+    publishBalance(fromId, 'transfer', mode);
+    publishBalance(toId, 'transfer', mode);
+    res.json({ ok: true });
+  } catch (e) {
+    if (e && (e as { code?: string }).code === 'FUNDS') return res.status(400).json({ error: (e as Error).message });
+    throw e;
+  }
+});
+
+// GET /api/admin/monitoring — live platform tiles.
+router.get('/monitoring', requirePermission('users.view'), async (_req, res) => {
+  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+  const [activeUsers, openPositions, dayTrades, deposits, withdrawals] = await Promise.all([
+    prisma.user.count({ where: { lastLoginAt: { gte: dayAgo } } }),
+    prisma.order.count({ where: { status: 'FILLED', closedAt: null } }),
+    prisma.order.findMany({ where: { status: 'CLOSED', closedAt: { gte: dayAgo } }, select: { price: true, amount: true, realizedPnl: true } }),
+    prisma.transaction.aggregate({ where: { type: 'DEPOSIT', status: 'COMPLETED' }, _sum: { amount: true } }),
+    prisma.transaction.aggregate({ where: { type: 'WITHDRAWAL', status: 'COMPLETED' }, _sum: { amount: true } }),
+  ]);
+  const dailyVolume = dayTrades.reduce((s, o) => s + parseFloat(o.price.toString()) * parseFloat(o.amount.toString()), 0);
+  // "Revenue" proxy: notional volume × a nominal 0.04% taker fee.
+  const revenue = dailyVolume * 0.0004;
+  res.json({
+    activeUsers,
+    openPositions,
+    dailyVolume,
+    revenue,
+    totalDeposits: deposits._sum.amount ? parseFloat(deposits._sum.amount.toString()) : 0,
+    totalWithdrawals: withdrawals._sum.amount ? parseFloat(withdrawals._sum.amount.toString()) : 0,
+  });
 });
 
 const assignSchema = z.object({ roleKey: z.string().min(1) });

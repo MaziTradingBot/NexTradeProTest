@@ -1,24 +1,80 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Search, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, Activity, Star, Bell, Trash2 } from 'lucide-react';
 import { MarketingNav } from '@/components/marketing/MarketingNav';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/store';
 import { useTickers, assetName } from '@/lib/useTickers';
 import { formatCompact, cn } from '@/lib/utils';
 
+interface Alert {
+  id: string;
+  symbol: string;
+  condition: 'ABOVE' | 'BELOW' | 'PCT_CHANGE';
+  value: string;
+  active: boolean;
+  triggeredAt: string | null;
+}
+
 export default function MarketsPage() {
   const { tickers, loading, live } = useTickers(6000);
+  const { user } = useAuth();
   const [q, setQ] = useState('');
   const [fng, setFng] = useState<{ value: number; label: string } | null>(null);
+  const [watch, setWatch] = useState<Set<string>>(new Set());
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertForm, setAlertForm] = useState({ symbol: 'BTCUSDT', condition: 'ABOVE', value: '' });
+  const [onlyWatch, setOnlyWatch] = useState(false);
+
+  const loadWatch = useCallback(() => {
+    if (!user) return;
+    api.get<string[]>('/api/account/watchlist').then((s) => setWatch(new Set(s))).catch(() => {});
+    api.get<Alert[]>('/api/account/alerts').then(setAlerts).catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     api.get<{ value: number; label: string }>('/api/market/fear-greed').then(setFng).catch(() => {});
   }, []);
+  useEffect(loadWatch, [loadWatch]);
 
-  const filtered = tickers.filter((t) => assetName(t.symbol).toLowerCase().includes(q.toLowerCase()));
+  const toggleWatch = async (symbol: string) => {
+    if (!user) return;
+    const has = watch.has(symbol);
+    setWatch((w) => {
+      const n = new Set(w);
+      has ? n.delete(symbol) : n.add(symbol);
+      return n;
+    });
+    try {
+      if (has) await api.del(`/api/account/watchlist/${symbol}`);
+      else await api.post('/api/account/watchlist', { symbol });
+    } catch {
+      loadWatch();
+    }
+  };
+
+  const createAlert = async () => {
+    const value = parseFloat(alertForm.value);
+    if (!value || value <= 0) return;
+    try {
+      await api.post('/api/account/alerts', { symbol: alertForm.symbol, condition: alertForm.condition, value });
+      setAlertForm((f) => ({ ...f, value: '' }));
+      loadWatch();
+    } catch {
+      /* ignore */
+    }
+  };
+  const deleteAlert = async (id: string) => {
+    await api.del(`/api/account/alerts/${id}`).catch(() => {});
+    setAlerts((a) => a.filter((x) => x.id !== id));
+  };
+
+  const filtered = tickers
+    .filter((t) => assetName(t.symbol).toLowerCase().includes(q.toLowerCase()))
+    .filter((t) => !onlyWatch || watch.has(t.symbol));
   const gainers = [...tickers].sort((a, b) => b.change - a.change)[0];
   const avg = tickers.length ? tickers.reduce((s, t) => s + t.change, 0) / tickers.length : 0;
 
@@ -75,6 +131,15 @@ export default function MarketsPage() {
               {filtered.map((t) => (
                 <Link key={t.symbol} href={`/trading?symbol=${t.symbol}`} className="grid grid-cols-12 items-center gap-4 px-6 py-4 transition hover:bg-[#080F1C]">
                   <div className="col-span-5 flex items-center gap-3">
+                    {user && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); toggleWatch(t.symbol); }}
+                        aria-label="Toggle watchlist"
+                        className={cn('shrink-0 transition', watch.has(t.symbol) ? 'text-brand-gold' : 'text-[#2E3F54] hover:text-[#5E7A96]')}
+                      >
+                        <Star size={16} fill={watch.has(t.symbol) ? 'currentColor' : 'none'} />
+                      </button>
+                    )}
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0F1D35] text-xs font-bold text-[#0EA5E9]">{assetName(t.symbol).slice(0, 3)}</div>
                     <div>
                       <div className="font-medium text-[#E8F1FF]">{assetName(t.symbol)}</div>
@@ -91,6 +156,47 @@ export default function MarketsPage() {
             </div>
           )}
         </div>
+
+        {/* Price alerts (logged-in users) */}
+        {user && (
+          <div className="card mt-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Bell size={18} className="text-brand-blue" />
+              <h2 className="font-semibold text-[#E8F1FF]">Price alerts</h2>
+              <button onClick={() => setOnlyWatch((v) => !v)} className={cn('ml-auto rounded-lg px-3 py-1.5 text-xs font-semibold transition', onlyWatch ? 'bg-brand-gold/15 text-brand-gold' : 'bg-white/5 text-[#5E7A96]')}>
+                <Star size={12} className="mr-1 inline" /> {onlyWatch ? 'Watchlist only' : 'Show watchlist'}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <select value={alertForm.symbol} onChange={(e) => setAlertForm((f) => ({ ...f, symbol: e.target.value }))} className="input max-w-[140px]">
+                {tickers.map((t) => <option key={t.symbol} value={t.symbol}>{assetName(t.symbol)}</option>)}
+              </select>
+              <select value={alertForm.condition} onChange={(e) => setAlertForm((f) => ({ ...f, condition: e.target.value }))} className="input max-w-[150px]">
+                <option value="ABOVE">Price above</option>
+                <option value="BELOW">Price below</option>
+                <option value="PCT_CHANGE">% change ≥</option>
+              </select>
+              <input value={alertForm.value} onChange={(e) => setAlertForm((f) => ({ ...f, value: e.target.value }))} type="number" placeholder={alertForm.condition === 'PCT_CHANGE' ? '%' : 'Price'} className="input max-w-[120px]" />
+              <button onClick={createAlert} className="btn-primary">Add alert</button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {alerts.length === 0 && <p className="text-sm text-[#5E7A96]">No alerts yet. You’ll be notified when a condition is met.</p>}
+              {alerts.map((a) => (
+                <div key={a.id} className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-2.5 text-sm">
+                  <span className="text-[#E8F1FF]">
+                    <span className="font-semibold">{assetName(a.symbol)}</span>{' '}
+                    <span className="text-[#5E7A96]">{a.condition === 'ABOVE' ? '≥' : a.condition === 'BELOW' ? '≤' : 'moves ≥'}</span>{' '}
+                    <span className="font-mono">{parseFloat(a.value).toLocaleString()}{a.condition === 'PCT_CHANGE' ? '%' : ''}</span>
+                  </span>
+                  <span className="flex items-center gap-3">
+                    <span className={cn('badge', a.active ? 'bg-brand-emerald/15 text-brand-emerald' : 'bg-white/10 text-[#5E7A96]')}>{a.active ? 'Active' : 'Triggered'}</span>
+                    <button onClick={() => deleteAlert(a.id)} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <MarketingFooter />

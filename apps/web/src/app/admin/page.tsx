@@ -22,17 +22,30 @@ interface SeriesPoint {
   revenue: number;
 }
 
+interface Monitoring {
+  activeUsers: number;
+  openPositions: number;
+  dailyVolume: number;
+  revenue: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+}
+
 export default function AdminOverview() {
   const { user, hasPermission } = useAuth();
   const [data, setData] = useState<Overview | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
+  const [mon, setMon] = useState<Monitoring | null>(null);
   const canAnalytics = user?.isSuperAdmin || hasPermission('admin.analytics.view');
 
   useEffect(() => {
     api.get<Overview>('/api/admin/overview').then(setData).catch(() => {});
+    api.get<Monitoring>('/api/admin/monitoring').then(setMon).catch(() => {});
+    const id = setInterval(() => api.get<Monitoring>('/api/admin/monitoring').then(setMon).catch(() => {}), 15000);
     if (canAnalytics) {
       api.get<{ series: SeriesPoint[] }>('/api/admin/analytics?days=14').then((d) => setSeries(d.series)).catch(() => {});
     }
+    return () => clearInterval(id);
   }, [canAnalytics]);
 
   const shortDate = (s: string) => s.slice(5); // MM-DD
@@ -53,7 +66,24 @@ export default function AdminOverview() {
         {user?.roles.map((r) => r.name).join(', ')}
       </p>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Live monitoring */}
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {[
+          { label: 'Active users (24h)', value: mon ? String(mon.activeUsers) : '—' },
+          { label: 'Open positions', value: mon ? String(mon.openPositions) : '—' },
+          { label: 'Daily volume', value: mon ? `$${formatCompact(mon.dailyVolume)}` : '—' },
+          { label: 'Revenue (24h)', value: mon ? formatCurrency(mon.revenue) : '—', tone: 'pos' },
+          { label: 'Total deposits', value: mon ? `$${formatCompact(mon.totalDeposits)}` : '—' },
+          { label: 'Total withdrawals', value: mon ? `$${formatCompact(mon.totalWithdrawals)}` : '—' },
+        ].map((m) => (
+          <div key={m.label} className="rounded-xl border border-brand-blue/12 bg-bg-surface/90 px-3 py-3">
+            <div className="text-[11px] uppercase tracking-wide text-ink-muted">{m.label}</div>
+            <div className={`mt-1 font-mono text-lg font-semibold ${m.tone === 'pos' ? 'text-brand-emerald' : 'text-white'}`}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => (
           <Link key={c.label} href={c.href} className="card group transition hover:border-brand-blue/40 hover:shadow-glow">
             <div className="flex items-center justify-between">

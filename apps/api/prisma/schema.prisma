@@ -72,6 +72,8 @@ model User {
   apiKeys       ApiKey[]
   kycSubmissions KycSubmission[]
   notifications Notification[]
+  watchlist     WatchlistItem[]
+  priceAlerts   PriceAlert[]
   referrals     User[]          @relation("Referrals")
   referredBy    User?           @relation("Referrals", fields: [referredById], references: [id])
   clients       User[]          @relation("BrokerClients")
@@ -181,12 +183,14 @@ enum OrderSide {
 enum OrderType {
   MARKET
   LIMIT
-  STOP
+  STOP // stop-market
+  STOP_LIMIT
+  TRAILING_STOP
 }
 
 enum OrderStatus {
-  OPEN
-  FILLED
+  OPEN // resting working order (limit/stop) awaiting trigger
+  FILLED // filled → an open position
   CLOSED
   CANCELLED
   REJECTED
@@ -213,6 +217,11 @@ model Order {
   margin     Decimal    @default(0) @db.Decimal(24, 8) // USDT margin reserved while open
   stopLoss   Decimal?   @db.Decimal(24, 8)
   takeProfit Decimal?   @db.Decimal(24, 8)
+  // Working-order trigger fields (limit/stop/stop-limit/trailing).
+  triggerPrice    Decimal? @db.Decimal(24, 8) // stop trigger / stop-limit activation
+  trailingPercent Decimal? @db.Decimal(10, 4) // trailing stop distance (%)
+  trailRef        Decimal? @db.Decimal(24, 8) // best price tracked for the trail
+  ocoGroupId      String? // links two OCO orders; filling one cancels the other
   filled     Decimal    @default(0) @db.Decimal(24, 8)
   status    OrderStatus @default(OPEN)
   // Position lifecycle — set when a filled position is closed.
@@ -323,6 +332,43 @@ model PlatformSetting {
   key       String   @unique
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// A user's favourite markets (watchlist).
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  symbol    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, symbol])
+  @@index([userId])
+}
+
+enum AlertCondition {
+  ABOVE
+  BELOW
+  PCT_CHANGE
+}
+
+// A price alert evaluated by the background engine against live prices.
+model PriceAlert {
+  id          String         @id @default(cuid())
+  userId      String
+  symbol      String
+  condition   AlertCondition
+  value       Decimal        @db.Decimal(24, 8) // target price, or % for PCT_CHANGE
+  refPrice    Decimal?       @db.Decimal(24, 8) // baseline for PCT_CHANGE
+  active      Boolean        @default(true)
+  triggeredAt DateTime?
+  createdAt   DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([active])
 }
 
 model KycSubmission {

@@ -87,12 +87,14 @@ router.get('/orders', async (req, res) => {
 const orderSchema = z.object({
   symbol: z.string().min(3),
   side: z.enum(['BUY', 'SELL']),
-  type: z.enum(['MARKET', 'LIMIT', 'STOP']),
+  type: z.enum(['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP']),
   price: z.number().positive(),
   amount: z.number().positive(),
   leverage: z.number().int().min(1).max(125).optional(),
   stopLoss: z.number().positive().optional(),
   takeProfit: z.number().positive().optional(),
+  triggerPrice: z.number().positive().optional(),
+  trailingPercent: z.number().positive().max(50).optional(),
 });
 
 const LIVE_DISABLED_MSG = 'Live trading has not yet been enabled for your account. Please contact support or wait for administrator activation.';
@@ -113,8 +115,16 @@ router.post('/orders', async (req, res) => {
   }
   const parsed = orderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
-  const { symbol, side, type, price, amount, leverage, stopLoss, takeProfit } = parsed.data;
+  const { symbol, side, type, price, amount, leverage, stopLoss, takeProfit, triggerPrice, trailingPercent } = parsed.data;
   const lev = Math.min(MAX_LEVERAGE, Math.max(1, leverage ?? 1));
+
+  // Working-order types require their trigger inputs.
+  if ((type === 'STOP' || type === 'STOP_LIMIT') && !triggerPrice) {
+    return res.status(400).json({ error: 'A trigger price is required for stop orders.' });
+  }
+  if (type === 'TRAILING_STOP' && !trailingPercent) {
+    return res.status(400).json({ error: 'A trailing distance (%) is required for trailing-stop orders.' });
+  }
 
   // Use the live price for market fills; fall back to the submitted price.
   const live = await getPrice(symbol).catch(() => null);
@@ -171,13 +181,44 @@ router.post('/orders', async (req, res) => {
     }
   }
 
-  // Limit / stop orders rest as pending working orders (no margin reserved
-  // until they trigger). They can be cancelled from the terminal.
+  // Limit / stop / stop-limit / trailing orders rest as pending working orders
+  // (no margin reserved until the engine triggers them). trailRef seeds the
+  // trailing high/low from the current price.
+  const seedTrail = type === 'TRAILING_STOP' ? live ?? price : undefined;
   const order = await prisma.order.create({
-    data: { userId: req.user!.id, mode, symbol, side, type, leverage: lev, price, amount, stopLoss, takeProfit, status: 'OPEN', filled: 0 },
+    data: {
+      userId: req.user!.id, mode, symbol, side, type, leverage: lev, price, amount, stopLoss, takeProfit,
+      triggerPrice, trailingPercent, trailRef: seedTrail, status: 'OPEN', filled: 0,
+    },
   });
-  await audit({ actorId: req.user!.id, action: 'order.place', target: order.id, meta: { symbol, side, mode }, ip: req.ip });
+  await audit({ actorId: req.user!.id, action: 'order.place', target: order.id, meta: { symbol, side, type, mode }, ip: req.ip });
   res.status(201).json(order);
+});
+
+// POST /api/account/orders/oco — place two linked orders; filling or cancelling
+// one automatically cancels the other (One-Cancels-the-Other).
+router.post('/orders/oco', async (req, res) => {
+  const mode = getMode(req);
+  if (mode === 'LIVE' && !canLiveTrade(req.user!)) return res.status(403).json({ error: LIVE_DISABLED_MSG });
+  const legSchema = orderSchema.extend({ type: z.enum(['LIMIT', 'STOP', 'STOP_LIMIT']) });
+  const parsed = z.object({ legs: z.tuple([legSchema, legSchema]) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'OCO requires exactly two limit/stop legs.' });
+
+  const groupId = `oco_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const created = await prisma.$transaction(
+    parsed.data.legs.map((leg) =>
+      prisma.order.create({
+        data: {
+          userId: req.user!.id, mode, symbol: leg.symbol, side: leg.side, type: leg.type,
+          leverage: Math.min(MAX_LEVERAGE, Math.max(1, leg.leverage ?? 1)), price: leg.price, amount: leg.amount,
+          triggerPrice: leg.triggerPrice, stopLoss: leg.stopLoss, takeProfit: leg.takeProfit,
+          ocoGroupId: groupId, status: 'OPEN', filled: 0,
+        },
+      }),
+    ),
+  );
+  await audit({ actorId: req.user!.id, action: 'order.oco', target: groupId, meta: { mode }, ip: req.ip });
+  res.status(201).json({ ok: true, ocoGroupId: groupId, orders: created });
 });
 
 // POST /api/account/orders/:id/close — close an open margin position at market.
@@ -260,6 +301,122 @@ router.get('/positions/history', async (req, res) => {
   res.json(rows);
 });
 
+// GET /api/account/stats — trading statistics computed from closed positions.
+router.get('/stats', async (req, res) => {
+  const mode = getMode(req);
+  const uid = req.user!.id;
+  const [closed, deposits, withdrawals] = await Promise.all([
+    prisma.order.findMany({ where: { userId: uid, mode, status: 'CLOSED' }, orderBy: { closedAt: 'asc' } }),
+    prisma.transaction.aggregate({ where: { userId: uid, mode, type: 'DEPOSIT', status: 'COMPLETED' }, _sum: { amount: true } }),
+    prisma.transaction.aggregate({ where: { userId: uid, mode, type: 'WITHDRAWAL', status: 'COMPLETED' }, _sum: { amount: true } }),
+  ]);
+
+  const pnls = closed.map((o) => (o.realizedPnl ? parseFloat(o.realizedPnl.toString()) : 0));
+  const wins = pnls.filter((p) => p > 0);
+  const losses = pnls.filter((p) => p < 0);
+  const grossProfit = wins.reduce((s, p) => s + p, 0);
+  const grossLoss = Math.abs(losses.reduce((s, p) => s + p, 0));
+  const totalRealized = grossProfit - grossLoss;
+
+  // Max drawdown across the realized-P/L equity curve.
+  let peak = 0, equity = 0, maxDrawdown = 0;
+  for (const p of pnls) {
+    equity += p;
+    peak = Math.max(peak, equity);
+    maxDrawdown = Math.max(maxDrawdown, peak - equity);
+  }
+
+  // Sharpe-like ratio: mean / std-dev of per-trade P/L.
+  const mean = pnls.length ? pnls.reduce((s, p) => s + p, 0) / pnls.length : 0;
+  const variance = pnls.length ? pnls.reduce((s, p) => s + (p - mean) ** 2, 0) / pnls.length : 0;
+  const std = Math.sqrt(variance);
+  const sharpe = std > 0 ? (mean / std) * Math.sqrt(pnls.length || 1) : 0;
+
+  const durations = closed
+    .filter((o) => o.closedAt)
+    .map((o) => new Date(o.closedAt as Date).getTime() - new Date(o.createdAt).getTime());
+  const avgDurationMs = durations.length ? durations.reduce((s, d) => s + d, 0) / durations.length : 0;
+
+  const now = Date.now();
+  const since = (ms: number) => closed.filter((o) => o.closedAt && now - new Date(o.closedAt as Date).getTime() <= ms).reduce((s, o) => s + (o.realizedPnl ? parseFloat(o.realizedPnl.toString()) : 0), 0);
+  const netDeposits = (deposits._sum.amount ? parseFloat(deposits._sum.amount.toString()) : 0) - (withdrawals._sum.amount ? parseFloat(withdrawals._sum.amount.toString()) : 0);
+
+  res.json({
+    mode,
+    totalTrades: closed.length,
+    wins: wins.length,
+    losses: losses.length,
+    winRate: closed.length ? (wins.length / closed.length) * 100 : 0,
+    lossRate: closed.length ? (losses.length / closed.length) * 100 : 0,
+    profitFactor: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0,
+    grossProfit,
+    grossLoss,
+    realizedPnl: totalRealized,
+    bestTrade: pnls.length ? Math.max(...pnls) : 0,
+    worstTrade: pnls.length ? Math.min(...pnls) : 0,
+    avgDurationMs,
+    maxDrawdown,
+    sharpe,
+    dailyProfit: since(24 * 3600 * 1000),
+    weeklyProfit: since(7 * 24 * 3600 * 1000),
+    monthlyProfit: since(30 * 24 * 3600 * 1000),
+    netDeposits,
+    roi: netDeposits > 0 ? (totalRealized / netDeposits) * 100 : 0,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Watchlist (favourite markets)
+// ---------------------------------------------------------------------------
+router.get('/watchlist', async (req, res) => {
+  const items = await prisma.watchlistItem.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: 'asc' } });
+  res.json(items.map((i) => i.symbol));
+});
+router.post('/watchlist', async (req, res) => {
+  const parsed = z.object({ symbol: z.string().min(3).max(20) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid symbol' });
+  const symbol = parsed.data.symbol.toUpperCase();
+  await prisma.watchlistItem.upsert({
+    where: { userId_symbol: { userId: req.user!.id, symbol } },
+    create: { userId: req.user!.id, symbol },
+    update: {},
+  });
+  res.status(201).json({ ok: true, symbol });
+});
+router.delete('/watchlist/:symbol', async (req, res) => {
+  await prisma.watchlistItem.deleteMany({ where: { userId: req.user!.id, symbol: req.params.symbol.toUpperCase() } });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Price alerts
+// ---------------------------------------------------------------------------
+router.get('/alerts', async (req, res) => {
+  const alerts = await prisma.priceAlert.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: 'desc' }, take: 50 });
+  res.json(alerts);
+});
+router.post('/alerts', async (req, res) => {
+  const parsed = z
+    .object({
+      symbol: z.string().min(3).max(20),
+      condition: z.enum(['ABOVE', 'BELOW', 'PCT_CHANGE']),
+      value: z.number().positive(),
+    })
+    .safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid alert' });
+  const symbol = parsed.data.symbol.toUpperCase();
+  // For percentage alerts, capture the current price as the baseline.
+  const refPrice = parsed.data.condition === 'PCT_CHANGE' ? await getPrice(symbol).catch(() => null) : null;
+  const alert = await prisma.priceAlert.create({
+    data: { userId: req.user!.id, symbol, condition: parsed.data.condition, value: parsed.data.value, refPrice: refPrice ?? undefined },
+  });
+  res.status(201).json(alert);
+});
+router.delete('/alerts/:id', async (req, res) => {
+  await prisma.priceAlert.deleteMany({ where: { id: req.params.id, userId: req.user!.id } });
+  res.json({ ok: true });
+});
+
 // GET /api/account/transactions/:id — full details for the explorer (own txn)
 router.get('/transactions/:id', async (req, res) => {
   const txn = await prisma.transaction.findFirst({
@@ -275,7 +432,15 @@ router.delete('/orders/:id', async (req, res) => {
   if (!order || order.userId !== req.user!.id) return res.status(404).json({ error: 'Order not found' });
   if (order.status !== 'OPEN') return res.status(409).json({ error: 'Only open orders can be cancelled' });
   const updated = await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } });
+  // Cancelling one OCO leg cancels its sibling too.
+  if (order.ocoGroupId) {
+    await prisma.order.updateMany({
+      where: { ocoGroupId: order.ocoGroupId, status: 'OPEN', NOT: { id: order.id } },
+      data: { status: 'CANCELLED' },
+    });
+  }
   await audit({ actorId: req.user!.id, action: 'order.cancel', target: order.id, ip: req.ip });
+  publishBalance(req.user!.id, 'order.cancel', order.mode);
   res.json(updated);
 });
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Search, Shield, X, UserCog, Ban, CheckCircle2, Trash2, DollarSign, Zap, KeyRound } from 'lucide-react';
+import { Search, Shield, X, UserCog, Ban, CheckCircle2, Trash2, DollarSign, Zap, KeyRound, Activity } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -41,6 +41,8 @@ export default function AdminUsersPage() {
   const [creditForm, setCreditForm] = useState({ asset: 'USDT', mode: 'LIVE', amount: '' });
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [resetForm, setResetForm] = useState({ pw: '', confirm: '' });
+  const [positions, setPositions] = useState<{ id: string; symbol: string; side: string; amount: string; price: string; leverage: number; mode: string }[]>([]);
+  const [adjust, setAdjust] = useState('');
   const [toast, setToast] = useState<string | null>(null);
 
   const loadUsers = useCallback(async (q = '') => {
@@ -52,10 +54,25 @@ export default function AdminUsersPage() {
     }
   }, []);
 
+  const loadPositions = useCallback(async (userId: string) => {
+    try {
+      const d = await api.get<{ positions: typeof positions }>(`/api/admin/users/${userId}/positions`);
+      setPositions(d.positions);
+    } catch {
+      setPositions([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadUsers();
     if (canAssign) api.get<Role[]>('/api/admin/roles').then(setRoles).catch(() => {});
   }, [loadUsers, canAssign]);
+
+  // Load the selected user's open positions when the manage drawer opens.
+  useEffect(() => {
+    if (selected && canManage) loadPositions(selected.id);
+    else setPositions([]);
+  }, [selected, canManage, loadPositions]);
 
   const showToast = (m: string) => {
     setToast(m);
@@ -123,6 +140,28 @@ export default function AdminUsersPage() {
       await api.patch(`/api/admin/users/${u.id}/trading-access`, patch);
       showToast('Live trading access updated');
       await loadUsers(search);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const forceClose = async (orderId: string, userId: string) => {
+    try {
+      await api.post(`/api/admin/positions/${orderId}/force-close`);
+      showToast('Position force-closed');
+      loadPositions(userId);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const adjustBalance = async (u: AdminUser) => {
+    const amount = parseFloat(adjust);
+    if (!amount) return showToast('Enter a non-zero amount');
+    try {
+      await api.post(`/api/admin/users/${u.id}/adjust-balance`, { amount, asset: 'USDT', mode: 'LIVE' });
+      showToast(`Adjusted balance by ${amount > 0 ? '+' : ''}${amount} USDT`);
+      setAdjust('');
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Failed');
     }
@@ -319,6 +358,37 @@ export default function AdminUsersPage() {
                 >
                   <KeyRound size={13} /> Reset password
                 </button>
+              </div>
+            )}
+
+            {/* Trading controls: open positions + balance adjustment */}
+            {canManage && (
+              <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">
+                <h3 className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <Activity size={13} /> Trading controls
+                </h3>
+                <div className="mb-1 text-xs text-ink-muted">Open positions ({positions.length})</div>
+                <div className="space-y-1.5">
+                  {positions.length === 0 && <p className="text-xs text-slate-500">No open positions.</p>}
+                  {positions.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-2 text-xs">
+                      <span className="text-white">
+                        <span className={cn('font-semibold', p.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{p.side === 'BUY' ? 'Long' : 'Short'}</span>{' '}
+                        {p.amount} {p.symbol} <span className="text-ink-muted">{p.leverage}x · {p.mode}</span>
+                      </span>
+                      <button onClick={() => forceClose(p.id, selectedLive.id)} className="rounded-md bg-red-500/15 px-2 py-1 font-semibold text-red-400 hover:bg-red-500/25">
+                        Force close
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 border-t border-white/5 pt-3">
+                  <div className="mb-1 text-xs text-ink-muted">Adjust Live balance (USDT · +credit / −debit)</div>
+                  <div className="flex gap-2">
+                    <input value={adjust} onChange={(e) => setAdjust(e.target.value)} type="number" placeholder="e.g. -500" className="input py-1.5 text-xs" />
+                    <button onClick={() => adjustBalance(selectedLive)} className="btn-primary shrink-0 px-3 py-1.5 text-xs">Apply</button>
+                  </div>
+                </div>
               </div>
             )}
 

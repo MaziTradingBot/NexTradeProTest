@@ -60,8 +60,10 @@ function TradingTerminal() {
   const [leverage, setLeverage] = useState(10);
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [amount, setAmount] = useState('');
-  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
+  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT' | 'TRAILING_STOP'>('MARKET');
   const [limitPrice, setLimitPrice] = useState('');
+  const [triggerPrice, setTriggerPrice] = useState('');
+  const [trailingPct, setTrailingPct] = useState('');
   const [stopLoss, setStopLoss] = useState('');
   const [takeProfit, setTakeProfit] = useState('');
   const [pairQuery, setPairQuery] = useState('');
@@ -139,9 +141,21 @@ function TradingTerminal() {
       setMsg('Enter a valid amount.');
       return;
     }
-    const limit = orderType === 'LIMIT' ? parseFloat(limitPrice) : price;
-    if (orderType === 'LIMIT' && (!limit || limit <= 0)) {
+    const needsLimit = orderType === 'LIMIT' || orderType === 'STOP_LIMIT';
+    const needsTrigger = orderType === 'STOP' || orderType === 'STOP_LIMIT';
+    const limit = needsLimit ? parseFloat(limitPrice) : price;
+    if (needsLimit && (!limit || limit <= 0)) {
       setMsg('Enter a valid limit price.');
+      return;
+    }
+    const trigger = needsTrigger ? parseFloat(triggerPrice) : undefined;
+    if (needsTrigger && (!trigger || trigger <= 0)) {
+      setMsg('Enter a valid trigger price.');
+      return;
+    }
+    const trail = orderType === 'TRAILING_STOP' ? parseFloat(trailingPct) : undefined;
+    if (orderType === 'TRAILING_STOP' && (!trail || trail <= 0)) {
+      setMsg('Enter a trailing distance (%).');
       return;
     }
     const sl = parseFloat(stopLoss) || undefined;
@@ -166,18 +180,18 @@ function TradingTerminal() {
         leverage: lev,
         stopLoss: sl,
         takeProfit: tp,
+        triggerPrice: trigger,
+        trailingPercent: trail,
       });
       const levLabel = market === 'FUTURES' ? ` at ${leverage}x` : '';
       const dir = market === 'FUTURES' ? (side === 'BUY' ? 'LONG' : 'SHORT') : side;
-      const prot = sl || tp ? ` · SL ${sl ?? '—'} / TP ${tp ?? '—'}` : '';
-      setMsg(
-        (orderType === 'MARKET'
-          ? `✓ ${dir} position opened for ${amt} ${assetName(symbol)}${levLabel} at $${price.toLocaleString()}`
-          : `✓ ${dir} limit order placed for ${amt} ${assetName(symbol)}${levLabel} @ $${limit.toLocaleString()}`) + prot,
-      );
+      const label = orderType === 'MARKET' ? 'position opened' : `${orderType.replace('_', ' ').toLowerCase()} order placed`;
+      setMsg(`✓ ${dir} ${label} for ${amt} ${assetName(symbol)}${levLabel}`);
       setAmount('');
       setStopLoss('');
       setTakeProfit('');
+      setTriggerPrice('');
+      setTrailingPct('');
       loadOrders();
       refresh();
       loadWallets();
@@ -458,19 +472,45 @@ function TradingTerminal() {
           </div>
 
           <label className="label">Order type</label>
-          <div className="mb-4 grid grid-cols-2 gap-2">
-            {(['MARKET', 'LIMIT'] as const).map((t) => (
+          <div className="mb-4 grid grid-cols-3 gap-1.5">
+            {([['MARKET', 'Market'], ['LIMIT', 'Limit'], ['STOP', 'Stop'], ['STOP_LIMIT', 'Stop-Limit'], ['TRAILING_STOP', 'Trailing']] as const).map(([t, lbl]) => (
               <button
                 key={t}
                 onClick={() => setOrderType(t)}
-                className={cn('rounded-xl py-2 text-xs font-semibold transition', orderType === t ? 'bg-brand-blue text-white' : 'bg-white/5 text-slate-400')}
+                className={cn('rounded-lg py-2 text-[11px] font-semibold transition', orderType === t ? 'bg-brand-blue text-white' : 'bg-white/5 text-slate-400 hover:text-white')}
               >
-                {t.charAt(0) + t.slice(1).toLowerCase()}
+                {lbl}
               </button>
             ))}
           </div>
 
-          {orderType === 'LIMIT' && (
+          {(orderType === 'STOP' || orderType === 'STOP_LIMIT') && (
+            <>
+              <label className="label">Trigger price (USDT)</label>
+              <input
+                value={triggerPrice}
+                onChange={(e) => setTriggerPrice(e.target.value)}
+                type="number"
+                placeholder={price ? price.toFixed(2) : '0.00'}
+                className="input mb-3"
+              />
+            </>
+          )}
+
+          {orderType === 'TRAILING_STOP' && (
+            <>
+              <label className="label">Trailing distance (%)</label>
+              <input
+                value={trailingPct}
+                onChange={(e) => setTrailingPct(e.target.value)}
+                type="number"
+                placeholder="e.g. 2.5"
+                className="input mb-3"
+              />
+            </>
+          )}
+
+          {(orderType === 'LIMIT' || orderType === 'STOP_LIMIT') && (
             <>
               <label className="label">Limit price (USDT)</label>
               <input
