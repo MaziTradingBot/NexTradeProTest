@@ -79,6 +79,15 @@ router.post('/orders', async (req, res) => {
   res.status(201).json(order);
 });
 
+// GET /api/account/transactions/:id — full details for the explorer (own txn)
+router.get('/transactions/:id', async (req, res) => {
+  const txn = await prisma.transaction.findFirst({
+    where: { id: req.params.id, userId: req.user!.id },
+  });
+  if (!txn) return res.status(404).json({ error: 'Transaction not found' });
+  res.json(txn);
+});
+
 // DELETE /api/account/orders/:id — cancel an open order
 router.delete('/orders/:id', async (req, res) => {
   const order = await prisma.order.findUnique({ where: { id: req.params.id } });

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowDownToLine, ArrowUpFromLine, Wallet as WalletIcon } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -26,6 +27,7 @@ interface TxRow {
 const REF: Record<string, number> = { USDT: 1, BTC: 67000, ETH: 3500 };
 
 function WalletInner() {
+  const router = useRouter();
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const [txns, setTxns] = useState<TxRow[]>([]);
   const [tab, setTab] = useState<'DEPOSIT' | 'WITHDRAWAL'>('DEPOSIT');
@@ -193,8 +195,8 @@ function WalletInner() {
             </thead>
             <tbody className="divide-y divide-white/5">
               {filtered.map((t) => (
-                <tr key={t.id}>
-                  <td className="px-5 py-3 font-mono text-slate-400">{t.reference ?? '—'}</td>
+                <tr key={t.id} onClick={() => router.push(`/transaction/${t.id}`)} className="cursor-pointer hover:bg-white/[0.03]">
+                  <td className="px-5 py-3 font-mono text-brand-blue hover:underline">{t.reference ?? '—'}</td>
                   <td className="px-5 py-3">
                     <span className={cn('badge', t.type === 'DEPOSIT' ? 'bg-brand-emerald/15 text-brand-emerald' : 'bg-brand-blue/15 text-brand-blue')}>
                       {t.type.charAt(0) + t.type.slice(1).toLowerCase()}

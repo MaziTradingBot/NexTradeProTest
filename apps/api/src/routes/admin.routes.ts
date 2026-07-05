@@ -248,9 +248,9 @@ router.post('/users/:id/credit', requirePermission('balances.manage'), async (re
 router.get('/withdrawals', requirePermission('withdrawals.view'), async (req, res) => {
   const status = (req.query.status as string) || 'PENDING';
   const txns = await prisma.transaction.findMany({
-    where: { type: 'WITHDRAWAL', status: status as never },
+    where: { type: 'WITHDRAWAL', ...(status === 'ALL' ? {} : { status: status as never }) },
     orderBy: { createdAt: 'desc' },
-    take: 100,
+    take: 150,
     include: { user: { select: { email: true, fullName: true } } },
   });
   res.json(txns);
@@ -282,6 +282,50 @@ router.post('/withdrawals/:id/review', requirePermission('withdrawals.approve'),
     ip: req.ip,
   });
 
+  res.json({ ok: true, transaction: updated });
+});
+
+// Full status-flow control: Pending → Under Review → Approved → Processing →
+// Completed (or Rejected), with an optional internal note.
+const statusFlowSchema = z.object({
+  status: z.enum(['PENDING', 'UNDER_REVIEW', 'APPROVED', 'PROCESSING', 'COMPLETED', 'REJECTED']),
+  note: z.string().max(500).optional(),
+});
+const USER_MSG: Record<string, { title: string; type: 'INFO' | 'SUCCESS' | 'WARNING' }> = {
+  UNDER_REVIEW: { title: 'Withdrawal under review', type: 'INFO' },
+  APPROVED: { title: 'Withdrawal approved', type: 'SUCCESS' },
+  PROCESSING: { title: 'Withdrawal processing', type: 'INFO' },
+  COMPLETED: { title: 'Withdrawal completed', type: 'SUCCESS' },
+  REJECTED: { title: 'Withdrawal rejected', type: 'WARNING' },
+};
+
+router.post('/withdrawals/:id/status', requirePermission('withdrawals.approve'), async (req, res) => {
+  const parsed = statusFlowSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid status' });
+
+  const txn = await prisma.transaction.findUnique({ where: { id: req.params.id } });
+  if (!txn || txn.type !== 'WITHDRAWAL') return res.status(404).json({ error: 'Withdrawal not found' });
+
+  // On completion, generate a simulated (demo) transaction reference.
+  const genRef = parsed.data.status === 'COMPLETED' && !txn.reference?.startsWith('0xDEMO');
+  const updated = await prisma.transaction.update({
+    where: { id: txn.id },
+    data: {
+      status: parsed.data.status,
+      note: parsed.data.note ?? txn.note,
+      reviewedById: req.user!.id,
+      reviewedAt: new Date(),
+      ...(genRef ? { reference: `0xDEMO${Math.random().toString(16).slice(2, 14)}` } : {}),
+    },
+  });
+
+  const msg = USER_MSG[parsed.data.status];
+  if (msg) {
+    await prisma.notification.create({
+      data: { userId: txn.userId, title: msg.title, body: `Your ${txn.amount} ${txn.asset} withdrawal is now ${parsed.data.status.replace('_', ' ').toLowerCase()}.`, type: msg.type },
+    });
+  }
+  await audit({ actorId: req.user!.id, action: `withdrawal.${parsed.data.status.toLowerCase()}`, target: txn.id, meta: { status: parsed.data.status }, ip: req.ip });
   res.json({ ok: true, transaction: updated });
 });
 
