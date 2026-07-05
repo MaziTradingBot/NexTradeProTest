@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ArrowLeft, Menu, X } from 'lucide-react';
+import { ArrowLeft, Menu, Shield, X } from 'lucide-react';
 import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationBell } from './NotificationBell';
@@ -98,8 +98,8 @@ export function Navbar() {
                 </Link>
               )}
               {user.isAdmin && (
-                <Link href="/admin" className="btn-ghost">
-                  Admin
+                <Link href="/admin" className="btn-ghost border-brand-cyan/30 text-brand-cyan hover:border-brand-cyan/50 hover:bg-brand-cyan/10">
+                  <Shield size={15} /> Admin
                 </Link>
               )}
               <Link href="/dashboard" className="btn-ghost">
@@ -153,8 +153,8 @@ export function Navbar() {
               {user ? (
                 <>
                   {user.isAdmin && (
-                    <Link href="/admin" className="btn-ghost" onClick={() => setOpen(false)}>
-                      Admin Panel
+                    <Link href="/admin" className="btn-ghost border-brand-cyan/30 text-brand-cyan" onClick={() => setOpen(false)}>
+                      <Shield size={15} /> Admin Panel
                     </Link>
                   )}
                   <Link href="/dashboard" className="btn-ghost" onClick={() => setOpen(false)}>
