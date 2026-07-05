@@ -135,6 +135,8 @@ router.get('/users', requirePermission('users.view'), async (req, res) => {
       liveTradingEnabled: u.liveTradingEnabled,
       tradingStatus: u.tradingStatus,
       tradingPermission: u.tradingPermission,
+      loginMethod: u.googleId ? (u.hasPassword ? 'EMAIL_GOOGLE' : 'GOOGLE') : 'EMAIL',
+      googleLinkedAt: u.googleLinkedAt,
       createdAt: u.createdAt,
       lastLoginAt: u.lastLoginAt,
       roles: u.roles.map((r) => ({ key: r.role.key, name: r.role.name, isAdmin: r.role.isAdmin })),

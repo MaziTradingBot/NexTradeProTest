@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, setAccessToken } from '@/lib/api';
 import { useAuth } from '@/lib/store';
+import { cn } from '@/lib/utils';
 
 // Loads Google Identity Services and renders the official "Sign in with Google"
 // button. Only appears when NEXT_PUBLIC_GOOGLE_CLIENT_ID is configured, so the
@@ -42,11 +43,20 @@ function loadScript(): Promise<void> {
   });
 }
 
-export function GoogleSignIn({ label = 'signin_with' }: { label?: 'signin_with' | 'signup_with' }) {
+export function GoogleSignIn({
+  label = 'continue_with',
+  mode = 'auth',
+  onLinked,
+}: {
+  label?: 'signin_with' | 'signup_with' | 'continue_with';
+  mode?: 'auth' | 'link';
+  onLinked?: () => void;
+}) {
   const router = useRouter();
   const { loadMe } = useAuth();
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!CLIENT_ID || !ref.current) return;
@@ -54,13 +64,22 @@ export function GoogleSignIn({ label = 'signin_with' }: { label?: 'signin_with' 
 
     const onCredential = async (resp: { credential: string }) => {
       setError(null);
+      setBusy(true);
       try {
-        const res = await api.post<{ accessToken: string }>('/api/auth/google', { credential: resp.credential });
-        setAccessToken(res.accessToken);
-        await loadMe();
-        router.push('/dashboard');
+        if (mode === 'link') {
+          await api.post('/api/account/link-google', { credential: resp.credential });
+          await loadMe();
+          onLinked?.();
+          setBusy(false);
+        } else {
+          const res = await api.post<{ accessToken: string }>('/api/auth/google', { credential: resp.credential });
+          setAccessToken(res.accessToken);
+          await loadMe();
+          router.push('/dashboard');
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Google sign-in failed');
+        setError(e instanceof Error ? e.message : 'Google sign-in failed. Please try again.');
+        setBusy(false);
       }
     };
 
@@ -77,21 +96,31 @@ export function GoogleSignIn({ label = 'signin_with' }: { label?: 'signin_with' 
           logo_alignment: 'center',
         });
       })
-      .catch(() => setError('Could not load Google sign-in.'));
+      .catch(() => setError('Could not load Google sign-in. Check your connection and try again.'));
 
     return () => {
       cancelled = true;
     };
-  }, [label, loadMe, router]);
+  }, [label, loadMe, router, mode, onLinked]);
 
   if (!CLIENT_ID) return null;
 
   return (
-    <div className="mt-4">
-      <div className="mb-4 flex items-center gap-3 text-xs text-ink-muted">
-        <span className="h-px flex-1 bg-white/10" /> or <span className="h-px flex-1 bg-white/10" />
+    <div className={mode === 'link' ? '' : 'mt-4'}>
+      {mode === 'auth' && (
+        <div className="mb-4 flex items-center gap-3 text-xs uppercase tracking-wide text-ink-muted">
+          <span className="h-px flex-1 bg-white/10" /> or <span className="h-px flex-1 bg-white/10" />
+        </div>
+      )}
+      <div className="relative flex justify-center">
+        <div ref={ref} className={cn('transition', busy && 'pointer-events-none opacity-40')} />
+        {busy && (
+          <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-ink-soft">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand-blue border-t-transparent" />
+            Signing you in…
+          </div>
+        )}
       </div>
-      <div ref={ref} className="flex justify-center" />
       {error && <p className="mt-2 text-center text-sm text-red-400">{error}</p>}
     </div>
   );

@@ -139,7 +139,7 @@ router.post('/google', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Missing Google credential' });
 
   // Verify the ID token with Google (no extra dependency needed).
-  let info: { aud?: string; email?: string; email_verified?: string | boolean; name?: string; sub?: string };
+  let info: { aud?: string; email?: string; email_verified?: string | boolean; name?: string; sub?: string; picture?: string };
   try {
     const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(parsed.data.credential)}`);
     if (!resp.ok) throw new Error('bad token');
@@ -155,17 +155,23 @@ router.post('/google', async (req, res) => {
   }
   const email = info.email.toLowerCase();
   const fullName = info.name || email.split('@')[0];
+  const googleId = info.sub;
 
   let user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     // First-time Google user — provision an account (random password) with the
-    // same starter wallets a normal registration receives.
+    // same starter wallets a normal registration receives. hasPassword=false
+    // marks it as a Google-only login until the user sets a password.
     const userRole = await prisma.role.findUnique({ where: { key: 'USER' } });
     user = await prisma.user.create({
       data: {
         email,
         passwordHash: await hashPassword(crypto.randomBytes(24).toString('hex')),
         fullName,
+        avatarUrl: info.picture ?? null,
+        googleId,
+        googleLinkedAt: new Date(),
+        hasPassword: false,
         referralCode: genReferralCode(),
         roles: userRole ? { create: { roleId: userRole.id } } : undefined,
         notifications: { create: [{ title: 'Welcome to NexTradePro 🎉', body: 'Your demo account is ready. Explore the trading terminal and AI assistant.', type: 'SUCCESS' }] },
@@ -182,7 +188,15 @@ router.post('/google', async (req, res) => {
         },
       },
     });
-    await audit({ actorId: user.id, action: 'auth.register.google', target: user.id, ip: req.ip });
+    await audit({ actorId: user.id, action: 'auth.register.google', target: user.id, meta: { email }, ip: req.ip });
+  } else if (!user.googleId && googleId) {
+    // Existing email/password user signing in with Google for the first time —
+    // auto-link the Google identity to the existing account (no duplicate).
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: { googleId, googleLinkedAt: new Date(), avatarUrl: user.avatarUrl ?? info.picture ?? null },
+    });
+    await audit({ actorId: user.id, action: 'auth.google.linked', target: user.id, meta: { email }, ip: req.ip });
   }
   if (user.status === 'SUSPENDED') return res.status(403).json({ error: 'Account suspended' });
 
@@ -283,7 +297,7 @@ router.get('/me', authenticate, async (req, res) => {
   const u = req.user!;
   const profile = await prisma.user.findUnique({
     where: { id: u.id },
-    select: { kycStatus: true, twoFactor: true },
+    select: { kycStatus: true, twoFactor: true, googleId: true, googleLinkedAt: true, hasPassword: true, avatarUrl: true },
   });
   // A Super Admin / full admin always has live-trading access.
   const canLiveTrade =
@@ -300,6 +314,9 @@ router.get('/me', authenticate, async (req, res) => {
     isBroker: u.isSuperAdmin || u.permissions.has('broker.access'),
     kycStatus: profile?.kycStatus ?? 'NONE',
     twoFactor: profile?.twoFactor ?? false,
+    avatarUrl: profile?.avatarUrl ?? null,
+    googleLinked: !!profile?.googleId,
+    hasPassword: profile?.hasPassword ?? true,
     liveTradingEnabled: u.liveTradingEnabled,
     tradingStatus: u.tradingStatus,
     tradingPermission: u.tradingPermission,

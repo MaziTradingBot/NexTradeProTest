@@ -14,6 +14,9 @@ export interface AuthUser {
   isBroker?: boolean;
   kycStatus?: string;
   twoFactor?: boolean;
+  avatarUrl?: string | null;
+  googleLinked?: boolean;
+  hasPassword?: boolean;
   liveTradingEnabled?: boolean;
   tradingStatus?: 'ACTIVE' | 'SUSPENDED';
   tradingPermission?: 'FULL' | 'READ_ONLY';

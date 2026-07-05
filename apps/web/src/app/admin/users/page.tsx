@@ -15,9 +15,13 @@ interface AdminUser {
   liveTradingEnabled: boolean;
   tradingStatus: 'ACTIVE' | 'SUSPENDED';
   tradingPermission: 'FULL' | 'READ_ONLY';
+  loginMethod: 'EMAIL' | 'GOOGLE' | 'EMAIL_GOOGLE';
+  googleLinkedAt: string | null;
   createdAt: string;
   roles: { key: string; name: string; isAdmin: boolean }[];
 }
+
+const LOGIN_LABEL: Record<string, string> = { EMAIL: 'Email', GOOGLE: 'Google', EMAIL_GOOGLE: 'Email + Google' };
 interface Role {
   id: string;
   key: string;
@@ -214,6 +218,7 @@ export default function AdminUsersPage() {
             <thead className="border-b border-white/10 text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-5 py-3">User</th>
+                <th className="px-5 py-3">Login</th>
                 <th className="px-5 py-3">Roles</th>
                 <th className="px-5 py-3">Status</th>
                 <th className="px-5 py-3 text-right">Actions</th>
@@ -232,6 +237,11 @@ export default function AdminUsersPage() {
                         <div className="text-xs text-slate-500">{u.email}</div>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <span className={cn('badge', u.loginMethod === 'EMAIL' ? 'bg-white/5 text-slate-400' : 'bg-brand-cyan/15 text-brand-cyan')} title={u.googleLinkedAt ? `Linked ${new Date(u.googleLinkedAt).toLocaleDateString()}` : undefined}>
+                      {u.loginMethod !== 'EMAIL' && <span className="font-bold text-[#4285F4]">G</span>} {LOGIN_LABEL[u.loginMethod] ?? 'Email'}
+                    </span>
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex flex-wrap gap-1">

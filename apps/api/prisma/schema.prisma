@@ -61,6 +61,12 @@ model User {
   // Password reset (forgot-password) — single-use, time-limited token hash.
   resetTokenHash String?
   resetTokenExp  DateTime?
+  // Google (OAuth / OpenID Connect) linkage.
+  googleId       String?   @unique
+  googleLinkedAt DateTime?
+  // Whether the user has a usable email+password login (false for accounts
+  // provisioned purely via Google). Guards Google unlink.
+  hasPassword    Boolean   @default(true)
   lastLoginAt   DateTime?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt

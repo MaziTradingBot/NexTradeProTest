@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AtSign, Copy, Lock, ShieldCheck, User } from 'lucide-react';
+import { AtSign, Copy, Link as LinkIcon, Lock, ShieldCheck, User } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
+import { GoogleSignIn } from '@/components/GoogleSignIn';
 import { QrCode } from '@/components/QrCode';
 import { api, setAccessToken } from '@/lib/api';
 import { useAuth } from '@/lib/store';
@@ -247,6 +248,46 @@ function SettingsInner() {
               Enable
             </button>
           </div>
+        )}
+      </div>
+
+      {/* Connected accounts (Google) */}
+      <div className="card mt-6">
+        <div className="mb-4 flex items-center gap-2">
+          <LinkIcon size={18} className="text-brand-cyan" />
+          <h2 className="font-semibold text-white">Connected accounts</h2>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/5 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-sm font-bold text-[#4285F4]">G</span>
+            <div>
+              <div className="text-sm font-medium text-white">Google</div>
+              <div className="text-xs text-slate-400">
+                {user?.googleLinked ? 'Sign in with your Google account' : 'Not connected'}
+              </div>
+            </div>
+          </div>
+          {user?.googleLinked ? (
+            <button
+              onClick={async () => {
+                try {
+                  await api.post('/api/account/unlink-google');
+                  await loadMe();
+                  flash('Google account unlinked');
+                } catch (e) {
+                  flash(e instanceof Error ? e.message : 'Failed');
+                }
+              }}
+              className="btn-ghost px-3 py-1.5 text-xs"
+            >
+              Unlink
+            </button>
+          ) : (
+            <GoogleSignIn mode="link" label="continue_with" onLinked={() => flash('Google account linked')} />
+          )}
+        </div>
+        {user?.googleLinked && user?.hasPassword === false && (
+          <p className="mt-2 text-xs text-brand-gold">Set a password (above) to be able to unlink Google.</p>
         )}
       </div>
 

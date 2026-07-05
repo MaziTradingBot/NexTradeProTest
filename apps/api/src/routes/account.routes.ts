@@ -7,6 +7,7 @@ import { generateBase32Secret, otpauthUri, verifyTotp } from '../lib/totp';
 import { hashPassword, verifyPassword, issueSession } from '../lib/auth';
 import { getPrice, getPrices } from '../lib/marketPrice';
 import { subscribe, publishBalance } from '../lib/events';
+import { verifyGoogleIdToken } from '../lib/google';
 import {
   ACCOUNT_CURRENCY,
   MARGIN_CALL_LEVEL,
@@ -673,12 +674,43 @@ router.post('/change-password', async (req, res) => {
   // re-issue this session so the current user stays logged in.
   const updated = await prisma.user.update({
     where: { id: req.user!.id },
-    data: { passwordHash: await hashPassword(parsed.data.newPassword), tokenVersion: { increment: 1 } },
+    // hasPassword=true so a Google-provisioned account gains an email login.
+    data: { passwordHash: await hashPassword(parsed.data.newPassword), hasPassword: true, tokenVersion: { increment: 1 } },
     select: { id: true, email: true, tokenVersion: true },
   });
   const accessToken = issueSession(res, updated);
   await audit({ actorId: req.user!.id, action: 'password.change', target: req.user!.id, ip: req.ip });
   res.json({ ok: true, accessToken });
+});
+
+// POST /api/account/link-google — link a Google identity to this account.
+router.post('/link-google', async (req, res) => {
+  const parsed = z.object({ credential: z.string().min(20) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Missing Google credential' });
+  const profile = await verifyGoogleIdToken(parsed.data.credential);
+  if (!profile) return res.status(401).json({ error: 'Could not verify Google sign-in' });
+
+  const clash = await prisma.user.findUnique({ where: { googleId: profile.sub } });
+  if (clash && clash.id !== req.user!.id) return res.status(409).json({ error: 'That Google account is already linked to another user.' });
+
+  await prisma.user.update({
+    where: { id: req.user!.id },
+    data: { googleId: profile.sub, googleLinkedAt: new Date(), avatarUrl: profile.picture ?? undefined },
+  });
+  await audit({ actorId: req.user!.id, action: 'account.google.linked', target: req.user!.id, meta: { googleEmail: profile.email }, ip: req.ip });
+  res.json({ ok: true, googleLinked: true });
+});
+
+// POST /api/account/unlink-google — remove the Google link (only if an
+// email+password login remains, so the user is never locked out).
+router.post('/unlink-google', async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { hasPassword: true, googleId: true } });
+  if (!user?.googleId) return res.status(400).json({ error: 'No Google account is linked.' });
+  if (!user.hasPassword) return res.status(400).json({ error: 'Set a password first so you can still sign in after unlinking Google.' });
+
+  await prisma.user.update({ where: { id: req.user!.id }, data: { googleId: null, googleLinkedAt: null } });
+  await audit({ actorId: req.user!.id, action: 'account.google.unlinked', target: req.user!.id, ip: req.ip });
+  res.json({ ok: true, googleLinked: false });
 });
 
 // POST /api/account/change-email — password-confirmed email change.
