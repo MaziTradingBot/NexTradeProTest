@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-sans: 'Figtree', system-ui, sans-serif;
+  --font-display: 'Barlow Condensed', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
@@ -16,9 +17,20 @@ html {
 }
 
 body {
-  @apply bg-bg text-slate-200;
-  background-image: radial-gradient(60% 50% at 50% 0%, rgba(11, 110, 255, 0.12), transparent 60%);
+  @apply bg-bg text-ink-soft;
+  font-family: var(--font-sans);
+  background-image: radial-gradient(60% 50% at 50% 0%, rgba(14, 165, 233, 0.1), transparent 60%);
   background-attachment: fixed;
+}
+
+/* Condensed display type for headings & big numerics (Barlow Condensed). */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+/* Small uppercase mono eyebrow used above section titles. */
+.eyebrow {
+  @apply font-mono text-xs uppercase tracking-[0.25em] text-brand-blue;
 }
 
 /* ── Light theme ─────────────────────────────────────────────────────────
@@ -84,34 +96,38 @@ html.light .bg-black\/20 { background-color: rgba(2, 6, 23, 0.05) !important; }
 /* Reusable design-system primitives */
 @layer components {
   .glass {
-    @apply border border-white/10 bg-white/5 backdrop-blur-xl;
+    @apply border border-brand-blue/10 bg-white/[0.03] backdrop-blur-xl;
   }
   .card {
-    @apply rounded-2xl border border-white/10 bg-bg-surface/80 p-6 shadow-card backdrop-blur-sm;
+    @apply rounded-2xl border border-brand-blue/10 bg-bg-surface/90 p-6 shadow-card backdrop-blur-sm transition-colors;
+  }
+  /* Interactive card that lifts on hover (feature tiles, market rows). */
+  .card-hover {
+    @apply card hover:border-brand-blue/30;
   }
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/60 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-gradient text-white shadow-glow hover:brightness-110 hover:shadow-glow-emerald;
+    @apply btn bg-brand-blue text-white shadow-glow hover:bg-brand-blueDark;
   }
   .btn-ghost {
-    @apply btn border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10;
+    @apply btn border border-brand-blue/20 bg-white/[0.03] text-ink hover:border-brand-blue/40 hover:bg-white/[0.06];
   }
   .btn-gold {
     @apply btn bg-gold-gradient text-brand-dark hover:brightness-105;
   }
   .input {
-    @apply w-full rounded-xl border border-white/10 bg-bg-elevated/60 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-brand-blue/60 focus:outline-none focus:ring-1 focus:ring-brand-blue/40;
+    @apply w-full rounded-xl border border-brand-blue/10 bg-bg-elevated/60 px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-brand-blue/60 focus:outline-none focus:ring-1 focus:ring-brand-blue/40;
   }
   .label {
-    @apply mb-1.5 block text-sm font-medium text-slate-300;
+    @apply mb-1.5 block text-sm font-medium text-ink-soft;
   }
   .badge {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
   .gradient-text {
-    @apply bg-gradient-to-r from-brand-blue via-brand-emerald to-brand-gold bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-brand-blue to-brand-cyan bg-clip-text text-transparent;
   }
 }
 

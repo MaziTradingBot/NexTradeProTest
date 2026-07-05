@@ -29,13 +29,13 @@ const PLANS = [
 
 export default function PricingPage() {
   return (
-    <div className="min-h-screen bg-white text-[#0a1633]" style={{ fontFamily: "'Figtree', system-ui, sans-serif" }}>
+    <div className="min-h-screen bg-bg text-[#E8F1FF]" style={{ fontFamily: "'Figtree', system-ui, sans-serif" }}>
       <MarketingNav />
 
-      <section className="bg-gradient-to-b from-[#f2f6ff] to-white">
+      <section className="bg-gradient-to-b from-[#0F1D35] to-bg">
         <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 lg:py-20">
-          <h1 className="text-4xl font-extrabold tracking-tight text-[#0a1633] sm:text-5xl">Simple, transparent pricing</h1>
-          <p className="mt-4 text-lg text-[#5b6b8c]">Start free. Upgrade as you scale. Cancel anytime.</p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-[#E8F1FF] sm:text-5xl">Simple, transparent pricing</h1>
+          <p className="mt-4 text-lg text-[#A0BDD8]">Start free. Upgrade as you scale. Cancel anytime.</p>
         </div>
       </section>
 
@@ -46,22 +46,22 @@ export default function PricingPage() {
               key={p.name}
               className={cn(
                 'relative flex flex-col rounded-2xl border p-8',
-                p.highlight ? 'border-[#1a56ff] shadow-[0_24px_60px_-30px_rgba(26,86,255,0.5)]' : 'border-[#e7ecf5] bg-white',
+                p.highlight ? 'border-[#0EA5E9] shadow-[0_24px_60px_-30px_rgba(26,86,255,0.5)]' : 'border-[#12233a] bg-bg-surface',
               )}
             >
               {p.highlight && (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#1a56ff] px-3 py-1 text-xs font-semibold text-white">Most popular</span>
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#0EA5E9] px-3 py-1 text-xs font-semibold text-white">Most popular</span>
               )}
-              <h3 className="text-lg font-semibold text-[#0a1633]">{p.name}</h3>
+              <h3 className="text-lg font-semibold text-[#E8F1FF]">{p.name}</h3>
               <div className="mt-3 flex items-end gap-1">
-                <span className="text-4xl font-extrabold text-[#0a1633]">{p.price}</span>
-                {p.period && <span className="mb-1 text-[#8593ad]">{p.period}</span>}
+                <span className="text-4xl font-extrabold text-[#E8F1FF]">{p.price}</span>
+                {p.period && <span className="mb-1 text-[#5E7A96]">{p.period}</span>}
               </div>
-              <p className="mt-2 text-sm text-[#5b6b8c]">{p.desc}</p>
+              <p className="mt-2 text-sm text-[#A0BDD8]">{p.desc}</p>
               <ul className="mt-6 flex-1 space-y-3">
                 {p.features.map(([label, on]) => (
-                  <li key={label} className={cn('flex items-start gap-2 text-sm', on ? 'text-[#0a1633]' : 'text-[#a4afc4]')}>
-                    {on ? <Check size={16} className="mt-0.5 shrink-0 text-[#12b76a]" /> : <Minus size={16} className="mt-0.5 shrink-0" />}
+                  <li key={label} className={cn('flex items-start gap-2 text-sm', on ? 'text-[#E8F1FF]' : 'text-[#5E7A96]')}>
+                    {on ? <Check size={16} className="mt-0.5 shrink-0 text-[#34D399]" /> : <Minus size={16} className="mt-0.5 shrink-0" />}
                     {label}
                   </li>
                 ))}
@@ -70,7 +70,7 @@ export default function PricingPage() {
                 href={p.name === 'Institutional' ? '/about' : '/register'}
                 className={cn(
                   'mt-8 rounded-full px-6 py-3 text-center text-sm font-semibold transition',
-                  p.highlight ? 'bg-[#1a56ff] text-white hover:bg-[#1246d6]' : 'border border-[#dbe1ee] text-[#0a1633] hover:border-[#1a56ff] hover:text-[#1a56ff]',
+                  p.highlight ? 'bg-[#0EA5E9] text-white hover:bg-[#0891D4]' : 'border border-[#12233a] text-[#E8F1FF] hover:border-[#0EA5E9] hover:text-[#0EA5E9]',
                 )}
               >
                 {p.cta}
@@ -78,7 +78,7 @@ export default function PricingPage() {
             </div>
           ))}
         </div>
-        <p className="mt-8 text-center text-sm text-[#8593ad]">All plans include free demo trading with a $100,000 virtual balance.</p>
+        <p className="mt-8 text-center text-sm text-[#5E7A96]">All plans include free demo trading with a $100,000 virtual balance.</p>
       </section>
 
       <MarketingFooter />
