@@ -34,6 +34,8 @@ export default function AdminUsersPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<AdminUser | null>(null);
+  const [creditTarget, setCreditTarget] = useState<AdminUser | null>(null);
+  const [creditForm, setCreditForm] = useState({ asset: 'USDT', mode: 'LIVE', amount: '' });
   const [toast, setToast] = useState<string | null>(null);
 
   const loadUsers = useCallback(async (q = '') => {
@@ -98,14 +100,14 @@ export default function AdminUsersPage() {
     }
   };
 
-  const creditUser = async (u: AdminUser) => {
-    const input = prompt(`Add demo USDT to ${u.fullName}'s account:`, '10000');
-    if (input === null) return;
-    const amount = parseFloat(input);
+  const submitCredit = async () => {
+    if (!creditTarget) return;
+    const amount = parseFloat(creditForm.amount);
     if (!amount || amount <= 0) return showToast('Enter a valid amount');
     try {
-      await api.post(`/api/admin/users/${u.id}/credit`, { asset: 'USDT', amount });
-      showToast(`Added ${amount.toLocaleString()} demo USDT to ${u.fullName}`);
+      await api.post(`/api/admin/users/${creditTarget.id}/credit`, { asset: creditForm.asset, amount, mode: creditForm.mode });
+      showToast(`Added ${amount.toLocaleString()} ${creditForm.asset} to ${creditTarget.fullName} (${creditForm.mode})`);
+      setCreditTarget(null);
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Failed');
     }
@@ -188,8 +190,8 @@ export default function AdminUsersPage() {
                   <td className="px-5 py-3.5 text-right">
                     <div className="flex justify-end gap-2">
                       {canCredit && (
-                        <button onClick={() => creditUser(u)} title="Add demo funds" className="btn-ghost px-2.5 py-1.5 text-xs text-brand-emerald">
-                          <DollarSign size={14} />
+                        <button onClick={() => { setCreditTarget(u); setCreditForm({ asset: 'USDT', mode: 'LIVE', amount: '' }); }} title="Add funds" className="btn-ghost px-3 py-1.5 text-xs text-brand-emerald">
+                          <DollarSign size={14} /> Add funds
                         </button>
                       )}
                       {canAssign && (
@@ -277,6 +279,47 @@ export default function AdminUsersPage() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add funds modal */}
+      {creditTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setCreditTarget(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-bg-surface p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-white">Add funds</h2>
+            <p className="mt-1 text-sm text-slate-400">To {creditTarget.fullName} ({creditTarget.email})</p>
+
+            <label className="label mt-4">Account</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['LIVE', 'DEMO'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setCreditForm((f) => ({ ...f, mode: m }))}
+                  className={cn('rounded-xl py-2 text-sm font-semibold transition', creditForm.mode === m ? (m === 'LIVE' ? 'bg-brand-blue text-white' : 'bg-brand-emerald text-white') : 'bg-white/5 text-slate-400')}
+                >
+                  {m === 'LIVE' ? 'Live account' : 'Demo account'}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="col-span-1">
+                <label className="label">Asset</label>
+                <select value={creditForm.asset} onChange={(e) => setCreditForm((f) => ({ ...f, asset: e.target.value }))} className="input">
+                  {['USDT', 'USDC', 'BTC', 'ETH', 'SOL', 'BNB'].map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="label">Amount</label>
+                <input value={creditForm.amount} onChange={(e) => setCreditForm((f) => ({ ...f, amount: e.target.value }))} type="number" placeholder="0.00" className="input" autoFocus />
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button onClick={() => setCreditTarget(null)} className="btn-ghost flex-1">Cancel</button>
+              <button onClick={submitCredit} className="btn-primary flex-1">Add funds</button>
             </div>
           </div>
         </div>

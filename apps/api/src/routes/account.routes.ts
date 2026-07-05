@@ -50,8 +50,11 @@ const orderSchema = z.object({
 
 router.post('/orders', async (req, res) => {
   const mode = getMode(req);
-  // Live trading stays disabled until real exchange integration.
-  if (mode === 'LIVE') return res.status(403).json({ error: LIVE_TRADING_MSG });
+  // Live trading stays disabled until an admin activates it (live_trading flag).
+  if (mode === 'LIVE') {
+    const flag = await prisma.featureFlag.findUnique({ where: { key: 'live_trading' } }).catch(() => null);
+    if (!flag?.enabled) return res.status(403).json({ error: LIVE_TRADING_MSG });
+  }
 
   const parsed = orderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });

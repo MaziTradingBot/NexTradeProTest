@@ -225,20 +225,29 @@ router.delete('/users/:id', requirePermission('users.manage'), async (req, res) 
   res.json({ ok: true });
 });
 
-// POST /api/admin/users/:id/credit — quick demo-balance top-up for a user
+// POST /api/admin/users/:id/credit — add funds to a user's Demo OR Live wallet
 router.post('/users/:id/credit', requirePermission('balances.manage'), async (req, res) => {
-  const parsed = z.object({ asset: z.string().min(2).default('USDT'), amount: z.number().positive() }).safeParse(req.body);
+  const parsed = z
+    .object({ asset: z.string().min(2).default('USDT'), amount: z.number().positive(), mode: z.enum(['DEMO', 'LIVE']).default('DEMO') })
+    .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Enter a valid amount' });
-  const { asset, amount } = parsed.data;
+  const { asset, amount, mode } = parsed.data;
+
   const wallet = await prisma.wallet.upsert({
-    where: { userId_asset_mode: { userId: req.params.id, asset, mode: 'DEMO' } },
-    create: { userId: req.params.id, asset, mode: 'DEMO', balance: amount },
+    where: { userId_asset_mode: { userId: req.params.id, asset, mode } },
+    create: { userId: req.params.id, asset, mode, balance: amount },
     update: { balance: { increment: amount } },
   });
+  // For Live credits, also record a completed deposit for the transaction history.
+  if (mode === 'LIVE') {
+    await prisma.transaction.create({
+      data: { userId: req.params.id, mode, type: 'DEPOSIT', asset, amount, status: 'COMPLETED', reference: `AD-${Date.now()}`, note: 'Admin credit' },
+    });
+  }
   await prisma.notification.create({
-    data: { userId: req.params.id, title: 'Demo balance credited', body: `${amount} ${asset} was added to your demo wallet by an administrator.`, type: 'SUCCESS' },
+    data: { userId: req.params.id, title: `${mode === 'LIVE' ? 'Live' : 'Demo'} balance credited`, body: `${amount} ${asset} was added to your ${mode.toLowerCase()} wallet by an administrator.`, type: 'SUCCESS' },
   });
-  await audit({ actorId: req.user!.id, action: 'balance.credit', target: req.params.id, meta: { asset, amount }, ip: req.ip });
+  await audit({ actorId: req.user!.id, action: 'balance.credit', target: req.params.id, meta: { asset, amount, mode }, ip: req.ip });
   res.json({ ok: true, wallet });
 });
 
@@ -539,6 +548,7 @@ const DEFAULT_FLAGS = [
   { key: 'copy_trading', label: 'Copy Trading', description: 'Enable the copy-trading module.' },
   { key: 'ai_assistant', label: 'AI Assistant', description: 'Enable the AI trading assistant.' },
   { key: 'futures', label: 'Futures Trading', description: 'Allow leveraged futures trading.' },
+  { key: 'live_trading', label: 'Live Trading (activation)', description: 'Activate order placement in Live mode for funded live accounts.' },
   { key: 'maintenance_mode', label: 'Maintenance Mode', description: 'Put the platform into maintenance.' },
   { key: 'new_signups', label: 'New Signups', description: 'Allow new user registrations.' },
 ];
@@ -548,7 +558,7 @@ router.get('/settings', requirePermission('system.settings'), async (_req, res) 
   for (const f of DEFAULT_FLAGS) {
     await prisma.featureFlag.upsert({
       where: { key: f.key },
-      create: { ...f, enabled: f.key !== 'maintenance_mode' },
+      create: { ...f, enabled: !['maintenance_mode', 'live_trading'].includes(f.key) },
       update: { label: f.label, description: f.description },
     });
   }

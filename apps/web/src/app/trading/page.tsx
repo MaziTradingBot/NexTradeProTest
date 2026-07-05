@@ -17,6 +17,7 @@ import TradingViewChart from '@/components/TradingViewChart';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useMode } from '@/lib/useMode';
+import { useFlags } from '@/lib/useFlags';
 import { useTickers, assetName } from '@/lib/useTickers';
 import { formatPercent, cn } from '@/lib/utils';
 
@@ -42,7 +43,10 @@ function TradingTerminal() {
   const { tickers } = useTickers(5000);
   const { user } = useAuth();
   const { mode } = useMode();
+  const { flags } = useFlags();
   const isLive = mode === 'LIVE';
+  // Live trading is locked unless an admin has activated it.
+  const tradingLocked = isLive && !flags.live_trading;
 
   const [symbol, setSymbol] = useState((params.get('symbol') || 'BTCUSDT').toUpperCase());
   const ticker = tickers.find((t) => t.symbol === symbol);
@@ -172,7 +176,7 @@ function TradingTerminal() {
         </span>
       </div>
 
-      {isLive && (
+      {tradingLocked && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-brand-blue/30 bg-brand-blue/10 px-4 py-3 text-sm text-slate-200">
           <span className="mt-0.5 text-brand-blue">🔒</span>
           <div>
@@ -182,6 +186,11 @@ function TradingTerminal() {
               administrator activation. Switch to Demo Mode to trade with simulated execution.
             </p>
           </div>
+        </div>
+      )}
+      {isLive && !tradingLocked && (
+        <div className="mb-4 rounded-xl border border-brand-emerald/30 bg-brand-emerald/10 px-4 py-2.5 text-sm text-slate-200">
+          <span className="font-semibold text-brand-emerald">Live trading is active.</span> Orders are placed against your live account balance.
         </div>
       )}
 
@@ -431,13 +440,13 @@ function TradingTerminal() {
 
           <button
             onClick={placeOrder}
-            disabled={isLive}
+            disabled={tradingLocked}
             className={cn(
               'w-full rounded-xl py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50',
               side === 'BUY' ? 'bg-brand-emerald hover:brightness-110' : 'bg-red-500 hover:brightness-110',
             )}
           >
-            {isLive
+            {tradingLocked
               ? 'Unavailable in Live Mode'
               : `${market === 'FUTURES' ? `${side === 'BUY' ? 'Long' : 'Short'} ${leverage}x` : side === 'BUY' ? 'Buy' : 'Sell'} ${assetName(symbol)}`}
           </button>

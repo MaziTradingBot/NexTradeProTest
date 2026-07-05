@@ -131,6 +131,7 @@ async function main() {
     { key: 'copy_trading', label: 'Copy Trading', description: 'Enable the copy-trading module.', enabled: true },
     { key: 'ai_assistant', label: 'AI Assistant', description: 'Enable the AI trading assistant.', enabled: true },
     { key: 'futures', label: 'Futures Trading', description: 'Allow leveraged futures trading.', enabled: true },
+    { key: 'live_trading', label: 'Live Trading (activation)', description: 'Activate order placement in Live mode for funded live accounts.', enabled: false },
     { key: 'maintenance_mode', label: 'Maintenance Mode', description: 'Put the platform into maintenance.', enabled: false },
     { key: 'new_signups', label: 'New Signups', description: 'Allow new user registrations.', enabled: true },
   ];
