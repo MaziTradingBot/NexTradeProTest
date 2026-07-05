@@ -1,20 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AtSign, Copy, KeyRound, Lock, ShieldCheck, Trash2, User } from 'lucide-react';
+import { AtSign, Copy, Lock, ShieldCheck, User } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { QrCode } from '@/components/QrCode';
 import { api, setAccessToken } from '@/lib/api';
 import { useAuth } from '@/lib/store';
-
-interface ApiKeyRow {
-  id: string;
-  label: string;
-  prefix: string;
-  lastFour: string;
-  createdAt: string;
-}
 
 function SettingsInner() {
   const { user, loadMe } = useAuth();
@@ -27,9 +19,6 @@ function SettingsInner() {
   const [pwError, setPwError] = useState<string | null>(null);
   const [em, setEm] = useState({ newEmail: '', confirmEmail: '', password: '' });
   const [emError, setEmError] = useState<string | null>(null);
-  const [keys, setKeys] = useState<ApiKeyRow[]>([]);
-  const [newLabel, setNewLabel] = useState('');
-  const [newSecret, setNewSecret] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const flash = (m: string) => {
@@ -40,7 +29,6 @@ function SettingsInner() {
   useEffect(() => {
     setFullName(user?.fullName ?? '');
     setTwoFactor(!!user?.twoFactor);
-    api.get<ApiKeyRow[]>('/api/account/apikeys').then(setKeys).catch(() => {});
   }, [user]);
 
   const saveProfile = async () => {
@@ -111,20 +99,6 @@ function SettingsInner() {
 
   // Format the base32 secret in groups of 4 for easy manual entry.
   const groupedSecret = setup ? setup.secret.replace(/(.{4})/g, '$1 ').trim() : '';
-
-  const createKey = async () => {
-    if (!newLabel.trim()) return;
-    const res = await api.post<{ secret: string }>('/api/account/apikeys', { label: newLabel });
-    setNewSecret(res.secret);
-    setNewLabel('');
-    api.get<ApiKeyRow[]>('/api/account/apikeys').then(setKeys).catch(() => {});
-  };
-
-  const revokeKey = async (id: string) => {
-    await api.del(`/api/account/apikeys/${id}`);
-    setKeys((k) => k.filter((x) => x.id !== id));
-    flash('API key revoked');
-  };
 
   return (
     <section className="mx-auto max-w-4xl px-4 pt-24 sm:px-6 lg:px-8">
@@ -274,61 +248,6 @@ function SettingsInner() {
             </button>
           </div>
         )}
-      </div>
-
-      {/* API keys */}
-      <div className="card mt-6">
-        <div className="mb-4 flex items-center gap-2">
-          <KeyRound size={18} className="text-brand-gold" />
-          <h2 className="font-semibold text-white">API Keys</h2>
-        </div>
-
-        <div className="flex gap-2">
-          <input
-            value={newLabel}
-            onChange={(e) => setNewLabel(e.target.value)}
-            placeholder="Key label, e.g. Trading bot"
-            className="input"
-          />
-          <button onClick={createKey} className="btn-primary whitespace-nowrap">
-            Generate
-          </button>
-        </div>
-
-        {newSecret && (
-          <div className="mt-3 rounded-xl border border-brand-gold/30 bg-brand-gold/10 p-3">
-            <div className="text-xs text-brand-gold">Copy this secret now — it won’t be shown again.</div>
-            <div className="mt-1 flex items-center justify-between gap-2">
-              <code className="truncate font-mono text-sm text-white">{newSecret}</code>
-              <button
-                onClick={() => {
-                  navigator.clipboard?.writeText(newSecret);
-                  flash('Copied');
-                }}
-                className="rounded-lg bg-white/10 p-2 text-white hover:bg-white/20"
-              >
-                <Copy size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-4 space-y-2">
-          {keys.map((k) => (
-            <div key={k.id} className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
-              <div>
-                <div className="text-sm font-medium text-white">{k.label}</div>
-                <div className="font-mono text-xs text-slate-500">
-                  {k.prefix}…{k.lastFour}
-                </div>
-              </div>
-              <button onClick={() => revokeKey(k.id)} className="rounded-lg p-2 text-red-400 hover:bg-red-500/10">
-                <Trash2 size={15} />
-              </button>
-            </div>
-          ))}
-          {keys.length === 0 && <p className="text-sm text-slate-500">No API keys yet.</p>}
-        </div>
       </div>
 
       {toast && (

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowDownToLine, ArrowUpFromLine, Wallet as WalletIcon } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
@@ -105,7 +106,7 @@ function WalletInner() {
           <div className="mt-1 text-3xl font-bold text-white">{formatCurrency(total)}</div>
           <div className="mt-4 space-y-2">
             {wallets.map((w) => (
-              <div key={w.id} className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
+              <Link key={w.id} href={`/wallet/${w.asset}`} className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3 transition hover:bg-white/10">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-gradient text-xs font-bold text-white">
                     {w.asset.slice(0, 3)}
@@ -119,9 +120,10 @@ function WalletInner() {
                   <div className="font-mono text-white">{parseFloat(w.balance).toLocaleString()}</div>
                   <div className="text-xs text-slate-500">≈ {formatCurrency(parseFloat(w.balance) * (REF[w.asset] ?? 0))}</div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
+          <Link href="/history" className="mt-3 block text-center text-xs font-semibold text-brand-blue hover:text-brand-cyan">View full transaction history →</Link>
         </div>
 
         {/* Deposit / Withdraw */}
