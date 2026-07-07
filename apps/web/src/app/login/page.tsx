@@ -16,6 +16,7 @@ function LoginInner() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -24,7 +25,7 @@ function LoginInner() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, remember);
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -69,6 +70,15 @@ function LoginInner() {
               </div>
               <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" placeholder="Enter your password" />
             </div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300 select-none">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 text-brand-blue focus:ring-brand-blue/40"
+              />
+              Keep me signed in for 30 days
+            </label>
             {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>}
             <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? 'Signing in…' : 'Sign in'}

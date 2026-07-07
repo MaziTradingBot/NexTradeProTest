@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { API_BASE, getAccessToken } from './api';
+import { useAuth } from './store';
 
 // Single shared SSE connection to the account event stream, fanned out to any
 // number of subscribing components. Balance-changing events on the server
@@ -23,7 +24,9 @@ function ensureConnection() {
   if (source) source.close();
   currentToken = token;
 
-  const es = new EventSource(`${API_BASE}/api/account/stream?token=${encodeURIComponent(token)}`, {
+  // Authenticate via the httpOnly access cookie (withCredentials) — the token is
+  // deliberately kept out of the URL so it never lands in server/proxy logs.
+  const es = new EventSource(`${API_BASE}/api/account/stream`, {
     withCredentials: true,
   });
   const fanout = (event: string) => listeners.forEach((l) => l(event));
@@ -44,6 +47,10 @@ function ensureConnection() {
  * change; typically you pass a function that refetches the page's data.
  */
 export function useLiveSync(onEvent: () => void) {
+  // Re-evaluate the connection when the signed-in user changes — in particular
+  // after a page reload, once the session rehydrates and the in-memory access
+  // token becomes available, this reconnects the (now cookie-authenticated) SSE.
+  const userId = useAuth((s) => s.user?.id);
   useEffect(() => {
     ensureConnection();
     const listener: Listener = () => onEvent();
@@ -51,5 +58,5 @@ export function useLiveSync(onEvent: () => void) {
     return () => {
       listeners.delete(listener);
     };
-  }, [onEvent]);
+  }, [onEvent, userId]);
 }

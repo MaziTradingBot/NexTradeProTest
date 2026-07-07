@@ -392,7 +392,7 @@ router.get('/login-history', async (req, res) => {
     where: { userId: req.user!.id },
     orderBy: { createdAt: 'desc' },
     take: 20,
-    select: { id: true, device: true, ip: true, success: true, createdAt: true },
+    select: { id: true, device: true, ip: true, location: true, success: true, createdAt: true },
   });
   res.json(events);
 });

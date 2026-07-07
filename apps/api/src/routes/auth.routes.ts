@@ -8,6 +8,7 @@ import {
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
+  setAuthCookies,
 } from '../lib/auth';
 import { authenticate } from '../middleware/auth';
 import { audit } from '../lib/audit';
@@ -15,6 +16,7 @@ import { env } from '../config/env';
 import { strongPassword } from '../lib/password';
 import { sendEmail, appBaseUrl } from '../lib/mailer';
 import { parseDevice } from '../lib/device';
+import { lookupLocation } from '../lib/geo';
 
 const router = Router();
 
@@ -36,15 +38,20 @@ async function issueEmailVerification(userId: string, email: string): Promise<st
   return url;
 }
 
-// Record a sign-in attempt for history / new-device detection / lockout.
+// Record a sign-in attempt for history / new-device detection / lockout. Geo is
+// looked up (best-effort) only for successful sign-ins to avoid extra outbound
+// calls on brute-force attempts.
 async function recordLogin(userId: string, req: import('express').Request, success: boolean, device?: string) {
+  const ip = req.ip ?? null;
+  const location = success ? await lookupLocation(ip) : null;
   await prisma.loginEvent
     .create({
       data: {
         userId,
-        ip: req.ip ?? null,
+        ip,
         userAgent: (req.get('user-agent') ?? '').slice(0, 300) || null,
         device: device ?? parseDevice(req.get('user-agent')),
+        location,
         success,
       },
     })
@@ -65,18 +72,8 @@ function genReferralCode(): string {
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  remember: z.boolean().optional(),
 });
-
-function setAuthCookies(res: import('express').Response, access: string, refresh: string) {
-  const common = {
-    httpOnly: true,
-    secure: env.isProd,
-    sameSite: env.isProd ? ('none' as const) : ('lax' as const),
-    domain: env.cookieDomain,
-  };
-  res.cookie('nxp_access', access, { ...common, maxAge: 15 * 60 * 1000 });
-  res.cookie('nxp_refresh', refresh, { ...common, maxAge: 7 * 24 * 60 * 60 * 1000 });
-}
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
@@ -149,7 +146,7 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid credentials' });
-  const { email, password } = parsed.data;
+  const { email, password, remember } = parsed.data;
 
   const user = await prisma.user.findUnique({ where: { email } });
   // Uniform response for unknown emails (no lockout state to track).
@@ -198,8 +195,8 @@ router.post('/login', async (req, res) => {
 
   const payload = { sub: user.id, email: user.email, tv: user.tokenVersion };
   const access = signAccessToken(payload);
-  const refresh = signRefreshToken(payload);
-  setAuthCookies(res, access, refresh);
+  const refresh = signRefreshToken(payload, !!remember);
+  setAuthCookies(res, access, refresh, !!remember);
 
   return res.json({
     user: { id: user.id, email: user.email, fullName: user.fullName },
@@ -328,10 +325,11 @@ router.post('/refresh', async (req, res) => {
     if (!user || user.status === 'SUSPENDED' || (payload.tv ?? 0) !== user.tokenVersion) {
       return res.status(401).json({ error: 'Session expired' });
     }
+    const remember = !!payload.rm;
     const newPayload = { sub: payload.sub, email: payload.email, tv: user.tokenVersion };
     const access = signAccessToken(newPayload);
-    const refresh = signRefreshToken(newPayload);
-    setAuthCookies(res, access, refresh);
+    const refresh = signRefreshToken(newPayload, remember);
+    setAuthCookies(res, access, refresh, remember);
     return res.json({ accessToken: access });
   } catch {
     return res.status(401).json({ error: 'Invalid refresh token' });

@@ -22,7 +22,7 @@ function SettingsInner() {
   const [em, setEm] = useState({ newEmail: '', confirmEmail: '', password: '' });
   const [emError, setEmError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [logins, setLogins] = useState<{ id: string; device: string | null; ip: string | null; success: boolean; createdAt: string }[]>([]);
+  const [logins, setLogins] = useState<{ id: string; device: string | null; ip: string | null; location: string | null; success: boolean; createdAt: string }[]>([]);
   const [demoVerify, setDemoVerify] = useState<string | null>(null);
 
   useEffect(() => {
@@ -337,6 +337,7 @@ function SettingsInner() {
             <thead className="text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-5 py-2">Device</th>
+                <th className="hidden px-5 py-2 md:table-cell">Location</th>
                 <th className="hidden px-5 py-2 sm:table-cell">IP</th>
                 <th className="px-5 py-2 text-right">Result</th>
                 <th className="px-5 py-2 text-right">When</th>
@@ -346,6 +347,7 @@ function SettingsInner() {
               {logins.map((l) => (
                 <tr key={l.id}>
                   <td className="px-5 py-3"><span className="inline-flex items-center gap-2 text-white"><Monitor size={14} className="text-slate-400" /> {l.device ?? 'Unknown device'}</span></td>
+                  <td className="hidden px-5 py-3 text-slate-300 md:table-cell">{l.location ?? '—'}</td>
                   <td className="hidden px-5 py-3 font-mono text-slate-400 sm:table-cell">{l.ip ?? '—'}</td>
                   <td className="px-5 py-3 text-right">
                     {l.success
@@ -355,7 +357,7 @@ function SettingsInner() {
                   <td className="px-5 py-3 text-right text-slate-400">{new Date(l.createdAt).toLocaleString()}</td>
                 </tr>
               ))}
-              {logins.length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-slate-500">No sign-in activity yet.</td></tr>}
+              {logins.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-500">No sign-in activity yet.</td></tr>}
             </tbody>
           </table>
         </div>

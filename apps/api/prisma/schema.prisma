@@ -631,6 +631,7 @@ model LoginEvent {
   ip        String?
   userAgent String?
   device    String? // human summary, e.g. "Chrome on macOS"
+  location  String? // approximate geo from IP, e.g. "Lagos, Nigeria"
   success   Boolean  @default(true)
   createdAt DateTime @default(now())
 
