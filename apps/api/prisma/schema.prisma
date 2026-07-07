@@ -80,8 +80,12 @@ model User {
   kycSubmissions KycSubmission[]
   notifications Notification[]
   watchlist     WatchlistItem[]
+  watchlists    Watchlist[]
   priceAlerts   PriceAlert[]
   addressProofs AddressProof[]
+  bankAccounts  BankAccount[]
+  payoutWallets PayoutWallet[]
+  statOverrides StatOverride[]
   referrals     User[]          @relation("Referrals")
   referredBy    User?           @relation("Referrals", fields: [referredById], references: [id])
   clients       User[]          @relation("BrokerClients")
@@ -342,17 +346,37 @@ model PlatformSetting {
   updatedAt DateTime @updatedAt
 }
 
-// A user's favourite markets (watchlist).
-model WatchlistItem {
+// A named, private watchlist (Favorites, Meme Coins, AI, ...). Each list is
+// unique to the authenticated user.
+model Watchlist {
   id        String   @id @default(cuid())
   userId    String
-  symbol    String
+  name      String
+  emoji     String?
+  isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items WatchlistItem[]
 
-  @@unique([userId, symbol])
   @@index([userId])
+}
+
+// A symbol inside a watchlist. `watchlistId` is nullable during migration; a
+// backfill assigns every legacy item to the user's default list.
+model WatchlistItem {
+  id          String   @id @default(cuid())
+  userId      String
+  watchlistId String?
+  symbol      String
+  createdAt   DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  watchlist Watchlist? @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, symbol])
+  @@index([userId])
+  @@index([watchlistId])
 }
 
 enum AlertCondition {
@@ -434,6 +458,78 @@ model ApiKey {
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Withdrawal destinations — saved per user, private, one default each.
+// ---------------------------------------------------------------------------
+
+model BankAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  accountHolderName String
+  bankName          String
+  accountNumber     String
+  iban              String?
+  swiftBic          String?
+  branchName        String?
+  branchAddress     String?
+  country           String
+  currency          String   @default("USD")
+  isDefault         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PayoutWallet {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String
+  asset     String // BTC, ETH, USDT, USDC, BNB, SOL, XRP, DOGE, ADA, LTC
+  network   String
+  address   String
+  memoTag   String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Admin Profit & Loss Manager — per-user, per-mode stat overrides. Any non-null
+// field overrides the value computed from real trades (used for presentations /
+// account tuning). All changes are audited.
+// ---------------------------------------------------------------------------
+
+model StatOverride {
+  id            String      @id @default(cuid())
+  userId        String
+  mode          AccountMode @default(DEMO)
+  realizedPnl   Float?
+  unrealizedPnl Float?
+  dailyPnl      Float?
+  weeklyPnl     Float?
+  monthlyPnl    Float?
+  lifetimePnl   Float?
+  roi           Float?
+  tradingVolume Float?
+  winRate       Float?
+  lossRate      Float?
+  updatedById   String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mode])
   @@index([userId])
 }
 

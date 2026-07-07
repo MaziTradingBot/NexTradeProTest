@@ -197,9 +197,14 @@ export default function MarketsPage() {
             </button>
           ))}
           {user && (
-            <button onClick={() => setOnlyWatch((v) => !v)} className={cn('ml-auto hidden shrink-0 items-center gap-1 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition sm:inline-flex sm:text-sm', onlyWatch ? 'border-brand-gold/50 bg-brand-gold/15 text-brand-gold' : 'border-[#12233a] bg-bg-surface text-[#A0BDD8]')}>
-              <Star size={13} fill={onlyWatch ? 'currentColor' : 'none'} /> Watchlist
-            </button>
+            <div className="ml-auto hidden shrink-0 items-center gap-2 sm:flex">
+              <button onClick={() => setOnlyWatch((v) => !v)} className={cn('inline-flex items-center gap-1 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition sm:text-sm', onlyWatch ? 'border-brand-gold/50 bg-brand-gold/15 text-brand-gold' : 'border-[#12233a] bg-bg-surface text-[#A0BDD8]')}>
+                <Star size={13} fill={onlyWatch ? 'currentColor' : 'none'} /> Watchlist
+              </button>
+              <Link href="/watchlists" className="inline-flex items-center gap-1 rounded-full border border-[#12233a] bg-bg-surface px-3.5 py-1.5 text-xs font-semibold text-[#A0BDD8] transition hover:border-[#22D3EE]/40 sm:text-sm">
+                Manage lists
+              </Link>
+            </div>
           )}
         </div>
 

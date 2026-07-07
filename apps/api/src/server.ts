@@ -14,6 +14,7 @@ import accountRoutes from './routes/account.routes';
 import brokerRoutes from './routes/broker.routes';
 import marketRoutes from './routes/market.routes';
 import contentRoutes from './routes/content.routes';
+import newsRoutes from './routes/news.routes';
 import { startTradingEngine } from './lib/tradingEngine';
 import { startMarketData } from './lib/marketData';
 
@@ -62,6 +63,7 @@ app.use('/api/account', accountRoutes);
 app.use('/api/broker', brokerRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/content', contentRoutes);
+app.use('/api/news', newsRoutes);
 
 // 404
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Sparkles, RefreshCw, Trash2, Wallet, Receipt, Bell, Loader2, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Sparkles, RefreshCw, Trash2, Wallet, Receipt, Bell, Loader2, Zap, Play, Square, Presentation } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -35,20 +35,30 @@ const REGEN: Action[] = [
 export default function ToolkitPage() {
   const [running, setRunning] = useState<string | null>(null);
   const [log, setLog] = useState<{ msg: string; ok: boolean }[]>([]);
+  const [presentation, setPresentation] = useState(false);
 
-  const run = async (action: Action) => {
+  useEffect(() => {
+    api.get<{ presentationMode: boolean }>('/api/admin/toolkit/status').then((s) => setPresentation(s.presentationMode)).catch(() => {});
+  }, []);
+
+  const runKey = async (key: string, confirmMsg?: string) => {
     if (running) return;
-    if (action.tone === 'danger' && !confirm(`${action.label}\n\n${action.desc}\n\nContinue?`)) return;
-    setRunning(action.key);
+    if (confirmMsg && !confirm(confirmMsg)) return;
+    setRunning(key);
     try {
-      const res = await api.post<{ message: string }>(`/api/admin/toolkit/${action.key}`);
+      const res = await api.post<{ message: string }>(`/api/admin/toolkit/${key}`);
       setLog((l) => [{ msg: res.message, ok: true }, ...l].slice(0, 8));
+      if (key === 'start_presentation') setPresentation(true);
+      if (key === 'stop_presentation') setPresentation(false);
     } catch (e) {
       setLog((l) => [{ msg: e instanceof Error ? e.message : 'Failed', ok: false }, ...l].slice(0, 8));
     } finally {
       setRunning(null);
     }
   };
+
+  const run = (action: Action) =>
+    runKey(action.key, action.tone === 'danger' ? `${action.label}\n\n${action.desc}\n\nContinue?` : undefined);
 
   const Btn = ({ a, big = false }: { a: Action; big?: boolean }) => (
     <button
@@ -88,6 +98,32 @@ export default function ToolkitPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Presentation Toolkit</h1>
           <p className="text-slate-400">One-click reset and regeneration of the demo platform for client demos.</p>
+        </div>
+      </div>
+
+      {/* Client Showcase Mode */}
+      <div className={cn('mt-6 rounded-2xl border p-5 sm:p-6 transition', presentation ? 'border-brand-emerald/40 bg-brand-emerald/5' : 'border-brand-blue/30 bg-brand-blue/5')}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="inline-flex shrink-0 rounded-xl bg-brand-gradient p-3 text-white"><Presentation size={22} /></div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-white">Client Showcase Mode</h2>
+                <span className={cn('badge', presentation ? 'bg-brand-emerald/15 text-brand-emerald' : 'bg-white/10 text-slate-400')}>{presentation ? 'ACTIVE' : 'Off'}</span>
+              </div>
+              <p className="mt-1 max-w-xl text-sm text-slate-400">One click resets every demo account, refills to $100k, generates realistic trades, transactions and notifications, and turns on Presentation Mode — a clean, polished environment for your next demo.</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button onClick={() => runKey('start_presentation')} disabled={!!running} className="btn-primary whitespace-nowrap disabled:opacity-60">
+              {running === 'start_presentation' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />} Start Client Presentation
+            </button>
+            {presentation && (
+              <button onClick={() => runKey('stop_presentation')} disabled={!!running} className="btn-ghost whitespace-nowrap">
+                {running === 'stop_presentation' ? <Loader2 size={16} className="animate-spin" /> : <Square size={16} />} Stop
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

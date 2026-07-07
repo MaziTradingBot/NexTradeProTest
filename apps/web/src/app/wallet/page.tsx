@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { useMode } from '@/lib/useMode';
 import { useLiveSync } from '@/lib/useLiveSync';
 import { formatCurrency, cn } from '@/lib/utils';
+import { WithdrawalMethods, type PayoutWallet, type BankAccount } from '@/components/WithdrawalMethods';
 
 interface WalletRow {
   id: string;
@@ -38,12 +39,24 @@ function WalletInner() {
   const [amount, setAmount] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAWAL'>('ALL');
+  const [destination, setDestination] = useState('');
+  const [payoutWallets, setPayoutWallets] = useState<PayoutWallet[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   const { mode } = useMode();
+  const loadMethods = useCallback(() => {
+    api.get<PayoutWallet[]>('/api/account/payout-wallets').then((w) => {
+      setPayoutWallets(w);
+      const def = w.find((x) => x.isDefault);
+      setDestination((d) => d || (def ? `w:${def.id}` : ''));
+    }).catch(() => {});
+    api.get<BankAccount[]>('/api/account/bank-accounts').then(setBankAccounts).catch(() => {});
+  }, []);
   const load = useCallback(() => {
     api.get<WalletRow[]>('/api/account/wallets').then(setWallets).catch(() => {});
     api.get<TxRow[]>('/api/account/transactions').then(setTxns).catch(() => {});
   }, []);
+  useEffect(() => { loadMethods(); }, [loadMethods]);
   useEffect(() => {
     load();
   }, [load, mode]);
@@ -61,7 +74,10 @@ function WalletInner() {
         await api.post('/api/account/deposit', { asset, amount: amt });
         setMsg(`✓ Deposited ${amt} ${asset} (demo, instantly credited)`);
       } else {
-        await api.post('/api/account/withdraw', { asset, amount: amt });
+        const body: Record<string, unknown> = { asset, amount: amt };
+        if (destination.startsWith('w:')) body.payoutWalletId = destination.slice(2);
+        else if (destination.startsWith('b:')) body.bankAccountId = destination.slice(2);
+        await api.post('/api/account/withdraw', body);
         setMsg('✓ Withdrawal submitted — pending admin approval.');
       }
       setAmount('');
@@ -155,6 +171,27 @@ function WalletInner() {
               <label className="label">Amount</label>
               <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" className="input" placeholder="0.00" />
             </div>
+            {tab === 'WITHDRAWAL' && (
+              <div>
+                <label className="label">Destination</label>
+                <select value={destination} onChange={(e) => setDestination(e.target.value)} className="input">
+                  <option value="">No saved destination</option>
+                  {payoutWallets.length > 0 && (
+                    <optgroup label="Crypto wallets">
+                      {payoutWallets.map((w) => <option key={w.id} value={`w:${w.id}`}>{w.label} · {w.asset}/{w.network}{w.isDefault ? ' (default)' : ''}</option>)}
+                    </optgroup>
+                  )}
+                  {bankAccounts.length > 0 && (
+                    <optgroup label="Bank accounts">
+                      {bankAccounts.map((b) => <option key={b.id} value={`b:${b.id}`}>{b.bankName} · {b.accountNumber}{b.isDefault ? ' (default)' : ''}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                {payoutWallets.length === 0 && bankAccounts.length === 0 && (
+                  <p className="mt-1 text-xs text-slate-500">Add a saved destination below for faster withdrawals.</p>
+                )}
+              </div>
+            )}
             <button className="btn-primary w-full">{tab === 'DEPOSIT' ? 'Deposit (demo)' : 'Request withdrawal'}</button>
             {msg && <p className="text-xs text-slate-300">{msg}</p>}
             <p className="text-xs text-slate-500">
@@ -172,6 +209,11 @@ function WalletInner() {
             )}
           </form>
         </div>
+      </div>
+
+      {/* Saved withdrawal methods */}
+      <div className="mt-6">
+        <WithdrawalMethods onChange={loadMethods} />
       </div>
 
       {/* History */}

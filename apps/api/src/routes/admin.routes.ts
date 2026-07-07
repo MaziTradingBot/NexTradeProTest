@@ -937,4 +937,59 @@ router.get('/audit', requirePermission('system.audit'), async (_req, res) => {
   res.json(logs);
 });
 
+// ---------------------------------------------------------------------------
+// Profit & Loss Manager — per-user, per-mode stat overrides (docs/08 §4).
+// ---------------------------------------------------------------------------
+const pnlModeSchema = z.enum(['DEMO', 'LIVE']);
+const pnlFields = ['realizedPnl', 'unrealizedPnl', 'dailyPnl', 'weeklyPnl', 'monthlyPnl', 'lifetimePnl', 'roi', 'tradingVolume', 'winRate', 'lossRate'] as const;
+const pnlSchema = z.object({
+  mode: pnlModeSchema.default('DEMO'),
+  realizedPnl: z.number().nullable().optional(),
+  unrealizedPnl: z.number().nullable().optional(),
+  dailyPnl: z.number().nullable().optional(),
+  weeklyPnl: z.number().nullable().optional(),
+  monthlyPnl: z.number().nullable().optional(),
+  lifetimePnl: z.number().nullable().optional(),
+  roi: z.number().nullable().optional(),
+  tradingVolume: z.number().nullable().optional(),
+  winRate: z.number().min(0).max(100).nullable().optional(),
+  lossRate: z.number().min(0).max(100).nullable().optional(),
+});
+
+// GET /api/admin/users/:id/pnl?mode=DEMO — current override (or nulls).
+router.get('/users/:id/pnl', requirePermission('balances.manage'), async (req, res) => {
+  const mode = pnlModeSchema.catch('DEMO').parse(req.query.mode);
+  const ov = await prisma.statOverride.findUnique({ where: { userId_mode: { userId: req.params.id, mode } } });
+  res.json(ov ?? { userId: req.params.id, mode, ...Object.fromEntries(pnlFields.map((f) => [f, null])) });
+});
+
+// PUT /api/admin/users/:id/pnl — upsert override; propagates to the user's
+// dashboard/analytics/portfolio via /api/account/stats. Audited.
+router.put('/users/:id/pnl', requirePermission('balances.manage'), async (req, res) => {
+  const parsed = pnlSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid values' });
+  const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  const { mode, ...fields } = parsed.data;
+  const data = Object.fromEntries(pnlFields.map((f) => [f, fields[f] ?? null]));
+  const before = await prisma.statOverride.findUnique({ where: { userId_mode: { userId: req.params.id, mode } } });
+  const ov = await prisma.statOverride.upsert({
+    where: { userId_mode: { userId: req.params.id, mode } },
+    create: { userId: req.params.id, mode, updatedById: req.user!.id, ...data },
+    update: { updatedById: req.user!.id, ...data },
+  });
+  await audit({ actorId: req.user!.id, action: 'pnl.override', target: req.params.id, meta: { mode, before, after: data }, ip: req.ip });
+  publishBalance(req.params.id, 'pnl.override', mode);
+  res.json(ov);
+});
+
+// DELETE /api/admin/users/:id/pnl?mode=DEMO — clear override (revert to real).
+router.delete('/users/:id/pnl', requirePermission('balances.manage'), async (req, res) => {
+  const mode = pnlModeSchema.catch('DEMO').parse(req.query.mode);
+  await prisma.statOverride.deleteMany({ where: { userId: req.params.id, mode } });
+  await audit({ actorId: req.user!.id, action: 'pnl.override.clear', target: req.params.id, meta: { mode }, ip: req.ip });
+  publishBalance(req.params.id, 'pnl.override.clear', mode);
+  res.json({ ok: true });
+});
+
 export default router;

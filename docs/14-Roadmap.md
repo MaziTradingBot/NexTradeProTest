@@ -13,19 +13,19 @@ Authoritative build tracker. Update the status column as work lands. Legend:
 | 4 | Authentication                | ✅ | Email + Google + 2FA + reset + session invalidation|
 | 5 | Dashboard                     | ✅ | KPIs, live sync                                    |
 | 6 | Trading terminal              | ✅ | Margin engine, all order types, SL/TP, liquidation |
-| 7 | Wallets                       | 🟡 | Balances/asset pages ✅; saved payout methods ⬜   |
+| 7 | Wallets                       | ✅ | Balances/asset pages + saved payout methods        |
 | 8 | Deposits                      | ✅ | Crypto + card                                      |
-| 9 | Withdrawals                   | 🟡 | Reserve/refund ✅; bank + saved-wallet methods ⬜  |
+| 9 | Withdrawals                   | ✅ | Reserve/refund + saved bank & crypto destinations  |
 |10 | Demo mode                     | ✅ | Mode-scoped accounts, admin demo controls          |
 |11 | Live mode                     | ✅ | KYC/permission gating, admin funding + approvals   |
 |12 | Broker portal                 | 🟡 | Assigned clients base; notes/KYC/recs/commissions ⬜|
-|13 | Admin portal                  | 🟡 | Funding/approvals/KYC/trading controls/audit ✅; P&L Mgr, Portfolio/Trade editors, Client Profile Mgr, audit search/export ⬜ |
+|13 | Admin portal                  | 🟡 | Funding/approvals/KYC/trading controls/audit + P&L Manager ✅; Portfolio/Trade editors, Client Profile Mgr, audit search/export ⬜ |
 |14 | CMS                           | 🟡 | Announcements base; blog/testimonials/news mgmt ⬜  |
 |15 | AI assistant                  | 🟡 | `/ai` page exists; insights generation ⬜          |
 |16 | Market Data Service           | ✅ | Coin DB (169 coins) + sync (prices+metadata) + categories + screener + coin detail; frontend calls only the backend |
-|17 | News center                   | 🟡 | `/news` page; approved-provider aggregation ⬜      |
-|18 | Watchlists (named)            | 🟡 | Single implicit list ✅; named multi-list ⬜        |
-|19 | Presentation toolkit          | 🟡 | Base generators; full Client Showcase Mode ⬜      |
+|17 | News center                   | ✅ | `/api/news` aggregates CryptoPanic/NewsAPI + announcements; sectioned, auto-refresh, graceful fallback |
+|18 | Watchlists (named)            | ✅ | Multi-list per user (create/rename/delete, add/remove); default backfill; `/watchlists` UI |
+|19 | Presentation toolkit          | ✅ | Generators + one-click Client Showcase Mode (Start/Stop presentation, refill+populate) |
 |20 | Profile security              | 🟡 | Password/2FA/email ✅; phone/address/tz/lang/notif ⬜|
 |21 | Support tickets               | ⬜ | Support role + ticket model + UI                   |
 |22 | Cross-platform responsive pass| ✅ | 320–2560 audit passed on all public/authed/admin pages; mobile admin nav added; marketing nav breakpoint fixed |

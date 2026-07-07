@@ -117,7 +117,38 @@ const ACTIONS: Record<string, () => Promise<string>> = {
     await regenerateNotifications();
     return 'Demo platform refreshed to a polished, populated presentation state.';
   },
+  // One-click "Start Client Presentation": reset + refill + populate DEMO data
+  // and turn on Presentation Mode so the app shows a clean, on-brand surface.
+  start_presentation: async () => {
+    await prisma.order.deleteMany({ where: { mode: 'DEMO' } });
+    await prisma.transaction.deleteMany({ where: { mode: 'DEMO' } });
+    await prisma.notification.deleteMany({});
+    await refillWallets();
+    await regenerateOrders();
+    await regenerateTransactions();
+    await regenerateNotifications();
+    await prisma.featureFlag.upsert({
+      where: { key: 'presentation_mode' },
+      create: { key: 'presentation_mode', label: 'Presentation Mode', description: 'Client showcase mode is active.', enabled: true },
+      update: { enabled: true },
+    });
+    return 'Presentation Mode ON — demo accounts refilled to $100k and dashboards populated. Ready to present.';
+  },
+  stop_presentation: async () => {
+    await prisma.featureFlag.upsert({
+      where: { key: 'presentation_mode' },
+      create: { key: 'presentation_mode', label: 'Presentation Mode', description: 'Client showcase mode is active.', enabled: false },
+      update: { enabled: false },
+    });
+    return 'Presentation Mode OFF — back to normal demo browsing.';
+  },
 };
+
+// GET /api/admin/toolkit/status — presentation-mode state for the admin UI.
+router.get('/status', async (_req, res) => {
+  const flag = await prisma.featureFlag.findUnique({ where: { key: 'presentation_mode' } });
+  res.json({ presentationMode: flag?.enabled ?? false });
+});
 
 // POST /api/admin/toolkit/:action
 router.post('/:action', async (req, res) => {
