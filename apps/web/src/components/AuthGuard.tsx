@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/store';
+import { SessionSentinel } from './SessionSentinel';
 
 export function AuthGuard({
   children,
@@ -37,5 +38,10 @@ export function AuthGuard({
   if (adminOnly && !user.isAdmin) return null;
   if (brokerOnly && !user.isBroker) return null;
 
-  return <>{children}</>;
+  return (
+    <>
+      <SessionSentinel />
+      {children}
+    </>
+  );
 }

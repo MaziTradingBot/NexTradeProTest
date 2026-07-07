@@ -1,16 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft, Clock } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { GoogleSignIn } from '@/components/GoogleSignIn';
 import { PasswordInput } from '@/components/PasswordInput';
 import { useAuth } from '@/lib/store';
 
-export default function LoginPage() {
+function LoginInner() {
   const router = useRouter();
+  const params = useSearchParams();
+  const timedOut = params.get('timeout') === '1';
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,6 +49,12 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-white">Welcome back</h1>
           <p className="mt-1 text-sm text-slate-400">Sign in to your NexTradePro account.</p>
 
+          {timedOut && (
+            <p className="mt-4 flex items-center gap-2 rounded-lg bg-brand-gold/10 px-3 py-2 text-sm text-brand-gold">
+              <Clock size={15} /> You were signed out due to inactivity. Please sign in again.
+            </p>
+          )}
+
           <form onSubmit={submit} className="mt-6 space-y-4">
             <div>
               <label className="label">Email</label>
@@ -78,5 +86,13 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-500">Loading…</div>}>
+      <LoginInner />
+    </Suspense>
   );
 }

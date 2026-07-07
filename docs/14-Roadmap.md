@@ -28,6 +28,7 @@ Authoritative build tracker. Update the status column as work lands. Legend:
 |19 | Presentation toolkit          | ✅ | Generators + one-click Client Showcase Mode (Start/Stop presentation, refill+populate) |
 |20 | Profile security              | 🟡 | Password/2FA/email ✅; phone/address/tz/lang/notif ⬜|
 |20a| Password & Auth UX            | ✅ | Reusable PasswordInput (show/hide, caps-lock, strength, a11y) everywhere + server-side password policy (docs/16) |
+|20b| Account security features     | ✅ | Email verification, idle-timeout auto-logout, new-device notifications, login history, account lockout (docs/16 §6) |
 |21 | Support tickets               | ⬜ | Support role + ticket model + UI                   |
 |22 | Cross-platform responsive pass| ✅ | 320–2560 audit passed on all public/authed/admin pages; mobile admin nav added; marketing nav breakpoint fixed |
 |23 | Testing (automated)           | ⬜ | Supertest API + Playwright responsive              |

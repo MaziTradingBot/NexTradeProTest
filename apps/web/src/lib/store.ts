@@ -17,6 +17,7 @@ export interface AuthUser {
   avatarUrl?: string | null;
   googleLinked?: boolean;
   hasPassword?: boolean;
+  emailVerified?: boolean;
   liveTradingEnabled?: boolean;
   tradingStatus?: 'ACTIVE' | 'SUSPENDED';
   tradingPermission?: 'FULL' | 'READ_ONLY';

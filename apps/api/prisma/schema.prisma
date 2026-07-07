@@ -68,6 +68,13 @@ model User {
   // Whether the user has a usable email+password login (false for accounts
   // provisioned purely via Google). Guards Google unlink.
   hasPassword    Boolean   @default(true)
+  // Email verification (soft — the account is usable but shows a prompt).
+  emailVerified       Boolean   @default(false)
+  emailVerifyTokenHash String?
+  emailVerifyExp      DateTime?
+  // Brute-force protection: failed-attempt counter + temporary lock.
+  failedLoginCount    Int       @default(0)
+  lockedUntil         DateTime?
   lastLoginAt   DateTime?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -86,6 +93,7 @@ model User {
   bankAccounts  BankAccount[]
   payoutWallets PayoutWallet[]
   statOverrides StatOverride[]
+  loginEvents   LoginEvent[]
   referrals     User[]          @relation("Referrals")
   referredBy    User?           @relation("Referrals", fields: [referredById], references: [id])
   clients       User[]          @relation("BrokerClients")
@@ -610,6 +618,25 @@ model Announcement {
 
   @@index([published])
   @@index([category])
+}
+
+// ---------------------------------------------------------------------------
+// Login events — powers recent-activity history, new-device detection, and
+// brute-force lockout. One row per sign-in attempt (success or failure).
+// ---------------------------------------------------------------------------
+
+model LoginEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  ip        String?
+  userAgent String?
+  device    String? // human summary, e.g. "Chrome on macOS"
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 // ---------------------------------------------------------------------------

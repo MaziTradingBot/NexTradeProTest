@@ -13,8 +13,43 @@ import { authenticate } from '../middleware/auth';
 import { audit } from '../lib/audit';
 import { env } from '../config/env';
 import { strongPassword } from '../lib/password';
+import { sendEmail, appBaseUrl } from '../lib/mailer';
+import { parseDevice } from '../lib/device';
 
 const router = Router();
+
+// Brute-force protection tuning.
+const MAX_FAILED_LOGINS = 5;
+const LOCK_MINUTES = 15;
+
+// Issue (or re-issue) an email-verification token and "send" the link. Returns
+// the verification URL so demo deployments without SMTP can still complete it.
+async function issueEmailVerification(userId: string, email: string): Promise<string> {
+  const token = crypto.randomBytes(32).toString('hex');
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+  await prisma.user.update({
+    where: { id: userId },
+    data: { emailVerifyTokenHash: hash, emailVerifyExp: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+  });
+  const url = `${appBaseUrl()}/verify-email?token=${token}`;
+  await sendEmail(email, 'Verify your NexTradePro email', `Confirm your email address to secure your account:\n${url}\n\nThis link expires in 24 hours.`);
+  return url;
+}
+
+// Record a sign-in attempt for history / new-device detection / lockout.
+async function recordLogin(userId: string, req: import('express').Request, success: boolean, device?: string) {
+  await prisma.loginEvent
+    .create({
+      data: {
+        userId,
+        ip: req.ip ?? null,
+        userAgent: (req.get('user-agent') ?? '').slice(0, 300) || null,
+        device: device ?? parseDevice(req.get('user-agent')),
+        success,
+      },
+    })
+    .catch(() => {});
+}
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -92,6 +127,8 @@ router.post('/register', async (req, res) => {
   });
 
   await audit({ actorId: user.id, action: 'auth.register', target: user.id, ip: req.ip });
+  const verifyUrl = await issueEmailVerification(user.id, user.email);
+  await recordLogin(user.id, req, true);
 
   const payload = { sub: user.id, email: user.email, tv: user.tokenVersion };
   const access = signAccessToken(payload);
@@ -101,6 +138,8 @@ router.post('/register', async (req, res) => {
   return res.status(201).json({
     user: { id: user.id, email: user.email, fullName: user.fullName },
     accessToken: access,
+    // SMTP not configured in the demo — surface the link so it can be completed.
+    demoVerifyUrl: verifyUrl,
   });
 });
 
@@ -111,15 +150,49 @@ router.post('/login', async (req, res) => {
   const { email, password } = parsed.data;
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !(await verifyPassword(password, user.passwordHash))) {
-    return res.status(401).json({ error: 'Invalid email or password' });
+  // Uniform response for unknown emails (no lockout state to track).
+  if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+
+  // Temporary lock in effect?
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    const mins = Math.max(1, Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000));
+    return res.status(423).json({ error: `Account temporarily locked after multiple failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}, or reset your password.` });
   }
+
+  const passwordOk = await verifyPassword(password, user.passwordHash);
+  if (!passwordOk) {
+    const failed = user.failedLoginCount + 1;
+    const lock = failed >= MAX_FAILED_LOGINS;
+    await prisma.user.update({
+      where: { id: user.id },
+      // Reset the counter when we lock so it starts fresh after the window.
+      data: { failedLoginCount: lock ? 0 : failed, lockedUntil: lock ? new Date(Date.now() + LOCK_MINUTES * 60000) : null },
+    });
+    await recordLogin(user.id, req, false);
+    if (lock) {
+      await prisma.notification.create({ data: { userId: user.id, title: 'Account temporarily locked', body: `Your account was locked for ${LOCK_MINUTES} minutes after ${MAX_FAILED_LOGINS} failed sign-in attempts.`, type: 'WARNING' } }).catch(() => {});
+      return res.status(423).json({ error: `Too many failed attempts — your account is locked for ${LOCK_MINUTES} minutes. You can reset your password to regain access.` });
+    }
+    const remaining = MAX_FAILED_LOGINS - failed;
+    return res.status(401).json({ error: `Invalid email or password.${remaining <= 2 ? ` ${remaining} attempt${remaining === 1 ? '' : 's'} left before a temporary lock.` : ''}` });
+  }
+
   if (user.status === 'SUSPENDED') {
     return res.status(403).json({ error: 'Account suspended' });
   }
 
-  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  // Success — clear failure state and record the sign-in.
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), failedLoginCount: 0, lockedUntil: null } });
   await audit({ actorId: user.id, action: 'auth.login', target: user.id, ip: req.ip });
+
+  const device = parseDevice(req.get('user-agent'));
+  const seenBefore = await prisma.loginEvent.findFirst({ where: { userId: user.id, success: true, device } });
+  await recordLogin(user.id, req, true, device);
+  if (!seenBefore) {
+    // New device / browser — notify in-app and by email.
+    await prisma.notification.create({ data: { userId: user.id, title: 'New sign-in to your account', body: `A new sign-in was detected from ${device}${req.ip ? ` (${req.ip})` : ''}. If this wasn't you, change your password immediately.`, type: 'WARNING' } }).catch(() => {});
+    await sendEmail(user.email, 'New sign-in to your NexTradePro account', `We noticed a sign-in from ${device}${req.ip ? ` (IP ${req.ip})` : ''} at ${new Date().toUTCString()}.\n\nIf this was you, no action is needed. If not, reset your password immediately.`);
+  }
 
   const payload = { sub: user.id, email: user.email, tv: user.tokenVersion };
   const access = signAccessToken(payload);
@@ -130,6 +203,27 @@ router.post('/login', async (req, res) => {
     user: { id: user.id, email: user.email, fullName: user.fullName },
     accessToken: access,
   });
+});
+
+// POST /api/auth/verify-email — consume the emailed token.
+router.post('/verify-email', async (req, res) => {
+  const parsed = z.object({ token: z.string().min(10) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid verification link' });
+  const hash = crypto.createHash('sha256').update(parsed.data.token).digest('hex');
+  const user = await prisma.user.findFirst({ where: { emailVerifyTokenHash: hash, emailVerifyExp: { gt: new Date() } } });
+  if (!user) return res.status(400).json({ error: 'This verification link is invalid or has expired.' });
+  await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true, emailVerifyTokenHash: null, emailVerifyExp: null } });
+  await audit({ actorId: user.id, action: 'auth.email_verified', target: user.id, ip: req.ip });
+  return res.json({ ok: true });
+});
+
+// POST /api/auth/resend-verification — re-issue the link for the signed-in user.
+router.post('/resend-verification', authenticate, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  if (user.emailVerified) return res.json({ ok: true, alreadyVerified: true });
+  const url = await issueEmailVerification(user.id, user.email);
+  return res.json({ ok: true, demoVerifyUrl: url });
 });
 
 // POST /api/auth/google — sign in / sign up with a Google ID token.
@@ -201,8 +295,17 @@ router.post('/google', async (req, res) => {
   }
   if (user.status === 'SUSPENDED') return res.status(403).json({ error: 'Account suspended' });
 
-  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  // Google verifies the email, so a Google sign-in confirms it here too.
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), failedLoginCount: 0, lockedUntil: null, emailVerified: true } });
   await audit({ actorId: user.id, action: 'auth.login.google', target: user.id, ip: req.ip });
+
+  const gDevice = parseDevice(req.get('user-agent'));
+  const gSeen = await prisma.loginEvent.findFirst({ where: { userId: user.id, success: true, device: gDevice } });
+  await recordLogin(user.id, req, true, gDevice);
+  if (!gSeen) {
+    await prisma.notification.create({ data: { userId: user.id, title: 'New sign-in to your account', body: `A new sign-in (via Google) was detected from ${gDevice}${req.ip ? ` (${req.ip})` : ''}. If this wasn't you, secure your account.`, type: 'WARNING' } }).catch(() => {});
+    await sendEmail(user.email, 'New sign-in to your NexTradePro account', `We noticed a Google sign-in from ${gDevice}${req.ip ? ` (IP ${req.ip})` : ''}. If this wasn't you, secure your account.`);
+  }
 
   const payload = { sub: user.id, email: user.email, tv: user.tokenVersion };
   const access = signAccessToken(payload);
@@ -298,7 +401,7 @@ router.get('/me', authenticate, async (req, res) => {
   const u = req.user!;
   const profile = await prisma.user.findUnique({
     where: { id: u.id },
-    select: { kycStatus: true, twoFactor: true, googleId: true, googleLinkedAt: true, hasPassword: true, avatarUrl: true },
+    select: { kycStatus: true, twoFactor: true, googleId: true, googleLinkedAt: true, hasPassword: true, avatarUrl: true, emailVerified: true },
   });
   // A Super Admin / full admin always has live-trading access.
   const canLiveTrade =
@@ -318,6 +421,7 @@ router.get('/me', authenticate, async (req, res) => {
     avatarUrl: profile?.avatarUrl ?? null,
     googleLinked: !!profile?.googleId,
     hasPassword: profile?.hasPassword ?? true,
+    emailVerified: profile?.emailVerified ?? false,
     liveTradingEnabled: u.liveTradingEnabled,
     tradingStatus: u.tradingStatus,
     tradingPermission: u.tradingPermission,

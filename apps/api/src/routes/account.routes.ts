@@ -386,6 +386,17 @@ router.get('/stats', async (req, res) => {
   res.json(base);
 });
 
+// GET /api/account/login-history — recent sign-in activity for this user.
+router.get('/login-history', async (req, res) => {
+  const events = await prisma.loginEvent.findMany({
+    where: { userId: req.user!.id },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    select: { id: true, device: true, ip: true, success: true, createdAt: true },
+  });
+  res.json(events);
+});
+
 // ---------------------------------------------------------------------------
 // Watchlists (named, private, per user). The legacy /watchlist endpoints act on
 // the user's default "Favorites" list for backward compatibility.

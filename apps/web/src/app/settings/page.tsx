@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AtSign, Copy, Link as LinkIcon, Lock, ShieldCheck, User } from 'lucide-react';
+import { AtSign, Copy, Link as LinkIcon, Lock, ShieldCheck, User, MailCheck, Clock, Monitor, CheckCircle2, XCircle } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { GoogleSignIn } from '@/components/GoogleSignIn';
@@ -23,6 +23,23 @@ function SettingsInner() {
   const [em, setEm] = useState({ newEmail: '', confirmEmail: '', password: '' });
   const [emError, setEmError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [logins, setLogins] = useState<{ id: string; device: string | null; ip: string | null; success: boolean; createdAt: string }[]>([]);
+  const [demoVerify, setDemoVerify] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<typeof logins>('/api/account/login-history').then(setLogins).catch(() => {});
+  }, []);
+
+  const resendVerification = async () => {
+    try {
+      const res = await api.post<{ demoVerifyUrl?: string; alreadyVerified?: boolean }>('/api/auth/resend-verification');
+      if (res.alreadyVerified) { flash('Your email is already verified'); loadMe(); return; }
+      setDemoVerify(res.demoVerifyUrl ?? null);
+      flash('Verification email sent');
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Failed');
+    }
+  };
 
   const flash = (m: string) => {
     setToast(m);
@@ -292,6 +309,63 @@ function SettingsInner() {
         {user?.googleLinked && user?.hasPassword === false && (
           <p className="mt-2 text-xs text-brand-gold">Set a password (above) to be able to unlink Google.</p>
         )}
+      </div>
+
+      {/* Email verification */}
+      <div className="card mt-6">
+        <div className="mb-1 flex items-center gap-2">
+          <MailCheck size={18} className="text-brand-blue" />
+          <h2 className="font-semibold text-white">Email verification</h2>
+        </div>
+        {user?.emailVerified ? (
+          <p className="flex items-center gap-2 text-sm text-brand-emerald"><CheckCircle2 size={15} /> Your email <span className="font-medium text-white">{user.email}</span> is verified.</p>
+        ) : (
+          <>
+            <p className="text-sm text-slate-400">Verify <span className="font-medium text-white">{user?.email}</span> to fully secure your account and enable recovery.</p>
+            <button onClick={resendVerification} className="btn-primary mt-3">Send verification email</button>
+            {demoVerify && (
+              <p className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-xs text-slate-300">
+                Demo (no SMTP configured):{' '}
+                <a href={demoVerify} className="font-medium text-brand-blue hover:underline">open your verification link</a>.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Recent sign-in activity */}
+      <div className="card mt-6 p-0">
+        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-3">
+          <Clock size={18} className="text-brand-blue" />
+          <h2 className="font-semibold text-white">Recent sign-in activity</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-5 py-2">Device</th>
+                <th className="hidden px-5 py-2 sm:table-cell">IP</th>
+                <th className="px-5 py-2 text-right">Result</th>
+                <th className="px-5 py-2 text-right">When</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {logins.map((l) => (
+                <tr key={l.id}>
+                  <td className="px-5 py-3"><span className="inline-flex items-center gap-2 text-white"><Monitor size={14} className="text-slate-400" /> {l.device ?? 'Unknown device'}</span></td>
+                  <td className="hidden px-5 py-3 font-mono text-slate-400 sm:table-cell">{l.ip ?? '—'}</td>
+                  <td className="px-5 py-3 text-right">
+                    {l.success
+                      ? <span className="inline-flex items-center gap-1 text-brand-emerald"><CheckCircle2 size={13} /> Success</span>
+                      : <span className="inline-flex items-center gap-1 text-red-400"><XCircle size={13} /> Failed</span>}
+                  </td>
+                  <td className="px-5 py-3 text-right text-slate-400">{new Date(l.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+              {logins.length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-slate-500">No sign-in activity yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {toast && (

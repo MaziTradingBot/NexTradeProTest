@@ -99,11 +99,20 @@ Implemented:
 - 🌐 Sign in with Google (`docs/05`)
 - 📱 2FA (TOTP authenticator) — Settings → Security
 - 🔑 Session invalidation on password/email change & admin reset
+- 📧 **Email verification after registration** — token emailed (logged + returned
+  in demo), `/verify-email` page, resend from Settings, `emailVerified` on `/me`,
+  dashboard prompt banner. Google sign-in marks the email verified.
+- ⏳ **Idle session timeout** — `SessionSentinel` auto-signs-out after 30 min of
+  inactivity, with a 60-second warning modal + "Stay signed in"; redirects to
+  `/login?timeout=1`.
+- 🔔 **New-device login notifications** — first sign-in from an unseen device
+  raises an in-app notification + email (email + Google paths).
+- 📜 **Recent login history** — every attempt is stored (`LoginEvent`: device,
+  IP, success, time); shown in Settings → Security.
+- 🚨 **Account lockout** — 5 failed attempts locks the account for 15 minutes
+  (`failedLoginCount` / `lockedUntil`); the login response warns as the limit
+  nears, and password reset restores access.
 
 Backlog (future-ready — not yet built):
 - ✅ Remember Me (longer refresh window) on login
-- 📧 Email verification after registration
-- ⏳ Idle session timeout with auto-logout
-- 🔔 New-device login notifications (email / in-app)
-- 📜 Recent login history (device, browser, approx. location, time)
-- 🚨 Account lockout after repeated failed logins + recovery
+- 🌍 Approximate geo-location in login history (needs an IP-geo provider)

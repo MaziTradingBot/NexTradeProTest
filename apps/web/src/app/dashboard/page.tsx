@@ -85,6 +85,12 @@ function DashboardInner() {
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
+      {user && user.emailVerified === false && (
+        <Link href="/settings" className="mb-5 flex items-center gap-2 rounded-xl border border-brand-gold/30 bg-brand-gold/10 px-4 py-3 text-sm text-brand-gold transition hover:bg-brand-gold/15">
+          <Shield size={16} className="shrink-0" />
+          <span>Please verify your email address to fully secure your account. <span className="font-semibold underline">Verify now →</span></span>
+        </Link>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
