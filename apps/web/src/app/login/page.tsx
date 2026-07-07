@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { GoogleSignIn } from '@/components/GoogleSignIn';
+import { PasswordInput } from '@/components/PasswordInput';
 import { useAuth } from '@/lib/store';
 
 export default function LoginPage() {
@@ -58,7 +59,7 @@ export default function LoginPage() {
                   Forgot password?
                 </Link>
               </div>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required className="input" />
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" placeholder="Enter your password" />
             </div>
             {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>}
             <button type="submit" disabled={loading} className="btn-primary w-full">

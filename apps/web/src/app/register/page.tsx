@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { GoogleSignIn } from '@/components/GoogleSignIn';
+import { PasswordInput } from '@/components/PasswordInput';
+import { evaluatePassword } from '@/lib/password';
 import { useAuth } from '@/lib/store';
 
 export default function RegisterPage() {
@@ -23,17 +25,11 @@ export default function RegisterPage() {
     if (ref) setReferral(ref);
   }, []);
 
-  const strength = (() => {
-    let s = 0;
-    if (password.length >= 8) s++;
-    if (/[A-Z]/.test(password)) s++;
-    if (/[0-9]/.test(password)) s++;
-    if (/[^A-Za-z0-9]/.test(password)) s++;
-    return s;
-  })();
+  const passwordValid = evaluatePassword(password).valid;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!passwordValid) return setError('Please choose a password that meets all the requirements.');
     setError(null);
     setLoading(true);
     try {
@@ -73,17 +69,7 @@ export default function RegisterPage() {
             </div>
             <div>
               <label className="label">Password</label>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required className="input" placeholder="At least 8 characters" />
-              {password && (
-                <div className="mt-2 flex gap-1">
-                  {[0, 1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      className={`h-1 flex-1 rounded-full ${i < strength ? (strength <= 2 ? 'bg-red-400' : strength === 3 ? 'bg-brand-gold' : 'bg-brand-emerald') : 'bg-white/10'}`}
-                    />
-                  ))}
-                </div>
-              )}
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} required showStrength autoComplete="new-password" placeholder="At least 8 characters" />
             </div>
             {referral && (
               <p className="rounded-lg bg-brand-emerald/10 px-3 py-2 text-sm text-brand-emerald">

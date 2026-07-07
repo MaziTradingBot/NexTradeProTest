@@ -6,6 +6,8 @@ import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { GoogleSignIn } from '@/components/GoogleSignIn';
 import { QrCode } from '@/components/QrCode';
+import { PasswordInput } from '@/components/PasswordInput';
+import { evaluatePassword } from '@/lib/password';
 import { api, setAccessToken } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 
@@ -40,7 +42,7 @@ function SettingsInner() {
 
   const changePassword = async () => {
     setPwError(null);
-    if (pw.next.length < 8) return setPwError('New password must be at least 8 characters.');
+    if (!evaluatePassword(pw.next).valid) return setPwError('Please choose a new password that meets all the requirements.');
     if (pw.next !== pw.confirm) return setPwError('New passwords do not match.');
     try {
       const res = await api.post<{ accessToken?: string }>('/api/account/change-password', { currentPassword: pw.current, newPassword: pw.next });
@@ -134,18 +136,19 @@ function SettingsInner() {
           <h2 className="font-semibold text-white">Change password</h2>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
-          <label className="block">
+          <div>
             <span className="label">Current password</span>
-            <input type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} className="input" />
-          </label>
-          <label className="block">
+            <PasswordInput value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} autoComplete="current-password" />
+          </div>
+          <div>
             <span className="label">New password</span>
-            <input type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} className="input" placeholder="At least 8 characters" />
-          </label>
-          <label className="block">
+            <PasswordInput value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} showStrength autoComplete="new-password" placeholder="At least 8 characters" />
+          </div>
+          <div>
             <span className="label">Confirm new password</span>
-            <input type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} className="input" />
-          </label>
+            <PasswordInput value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} autoComplete="new-password" />
+            {pw.confirm && pw.confirm !== pw.next && <p className="mt-1 text-xs text-red-400">Passwords do not match.</p>}
+          </div>
         </div>
         {pwError && <p className="mt-3 text-sm text-red-400">{pwError}</p>}
         <button onClick={changePassword} disabled={!pw.current || !pw.next} className="btn-primary mt-4">
@@ -171,10 +174,10 @@ function SettingsInner() {
             <span className="label">Confirm new email</span>
             <input type="email" value={em.confirmEmail} onChange={(e) => setEm({ ...em, confirmEmail: e.target.value })} className="input" />
           </label>
-          <label className="block">
+          <div>
             <span className="label">Current password</span>
-            <input type="password" value={em.password} onChange={(e) => setEm({ ...em, password: e.target.value })} className="input" />
-          </label>
+            <PasswordInput value={em.password} onChange={(e) => setEm({ ...em, password: e.target.value })} autoComplete="current-password" />
+          </div>
         </div>
         {emError && <p className="mt-3 text-sm text-red-400">{emError}</p>}
         <button onClick={changeEmail} disabled={!em.newEmail || !em.password} className="btn-primary mt-4">

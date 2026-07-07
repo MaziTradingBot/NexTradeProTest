@@ -6,6 +6,7 @@ import { publishBalance } from '../lib/events';
 import { authenticate, requireAdmin, requirePermission } from '../middleware/auth';
 import { audit } from '../lib/audit';
 import { hashPassword } from '../lib/auth';
+import { strongPassword } from '../lib/password';
 import { getPrice } from '../lib/marketPrice';
 import { ACCOUNT_CURRENCY, floatingPnl, round8 } from '../lib/trading';
 
@@ -208,7 +209,7 @@ router.patch('/users/:id/trading-access', requirePermission('users.manage'), asy
 // POST /api/admin/users/:id/reset-password — set a new password without the old
 // one. Invalidates all of the user's sessions and records an audit entry.
 router.post('/users/:id/reset-password', requirePermission('users.manage'), async (req, res) => {
-  const parsed = z.object({ newPassword: z.string().min(8, 'Password must be at least 8 characters') }).safeParse(req.body);
+  const parsed = z.object({ newPassword: strongPassword }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 
   const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, email: true, fullName: true } });

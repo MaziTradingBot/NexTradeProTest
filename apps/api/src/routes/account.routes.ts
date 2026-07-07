@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth';
 import { audit } from '../lib/audit';
 import { generateBase32Secret, otpauthUri, verifyTotp } from '../lib/totp';
 import { hashPassword, verifyPassword, issueSession } from '../lib/auth';
+import { strongPassword } from '../lib/password';
 import { getPrice, getPrices } from '../lib/marketPrice';
 import { subscribe, publishBalance } from '../lib/events';
 import { verifyGoogleIdToken } from '../lib/google';
@@ -968,7 +969,7 @@ router.post('/kyc', async (req, res) => {
 
 // POST /api/account/change-password
 router.post('/change-password', async (req, res) => {
-  const schema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8, 'New password must be at least 8 characters') });
+  const schema = z.object({ currentPassword: z.string().min(1), newPassword: strongPassword });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 

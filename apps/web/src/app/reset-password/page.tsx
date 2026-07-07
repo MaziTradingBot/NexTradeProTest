@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { Logo } from '@/components/Logo';
+import { PasswordInput } from '@/components/PasswordInput';
+import { evaluatePassword } from '@/lib/password';
 import { api } from '@/lib/api';
 
 function ResetInner() {
@@ -20,7 +22,7 @@ function ResetInner() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (pw.length < 8) return setError('Password must be at least 8 characters.');
+    if (!evaluatePassword(pw).valid) return setError('Please choose a password that meets all the requirements.');
     if (pw !== confirm) return setError('Passwords do not match.');
     setLoading(true);
     try {
@@ -60,11 +62,12 @@ function ResetInner() {
             <form onSubmit={submit} className="mt-6 space-y-4">
               <div>
                 <label className="label">New password</label>
-                <input value={pw} onChange={(e) => setPw(e.target.value)} type="password" required className="input" placeholder="At least 8 characters" />
+                <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} required showStrength autoComplete="new-password" placeholder="At least 8 characters" />
               </div>
               <div>
                 <label className="label">Confirm new password</label>
-                <input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" required className="input" />
+                <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="new-password" placeholder="Re-enter your new password" />
+                {confirm && confirm !== pw && <p className="mt-1 text-xs text-red-400">Passwords do not match.</p>}
               </div>
               {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>}
               <button type="submit" disabled={loading} className="btn-primary w-full">

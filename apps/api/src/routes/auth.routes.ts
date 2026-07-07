@@ -12,12 +12,13 @@ import {
 import { authenticate } from '../middleware/auth';
 import { audit } from '../lib/audit';
 import { env } from '../config/env';
+import { strongPassword } from '../lib/password';
 
 const router = Router();
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: strongPassword,
   fullName: z.string().min(2),
   referral: z.string().optional(),
 });
@@ -264,7 +265,7 @@ router.post('/forgot-password', async (req, res) => {
 // POST /api/auth/reset-password — consume the token and set a new password.
 router.post('/reset-password', async (req, res) => {
   const parsed = z
-    .object({ token: z.string().min(10), password: z.string().min(8, 'Password must be at least 8 characters') })
+    .object({ token: z.string().min(10), password: strongPassword })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
 

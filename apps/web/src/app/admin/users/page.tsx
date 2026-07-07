@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Search, Shield, X, UserCog, Ban, CheckCircle2, Trash2, DollarSign, Zap, KeyRound, Activity } from 'lucide-react';
 import { api } from '@/lib/api';
+import { PasswordInput } from '@/components/PasswordInput';
+import { evaluatePassword } from '@/lib/password';
 import { useAuth } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
@@ -173,7 +175,7 @@ export default function AdminUsersPage() {
 
   const submitReset = async () => {
     if (!resetTarget) return;
-    if (resetForm.pw.length < 8) return showToast('Password must be at least 8 characters');
+    if (!evaluatePassword(resetForm.pw).valid) return showToast('Password must meet all strength requirements');
     if (resetForm.pw !== resetForm.confirm) return showToast('Passwords do not match');
     try {
       await api.post(`/api/admin/users/${resetTarget.id}/reset-password`, { newPassword: resetForm.pw });
@@ -505,9 +507,10 @@ export default function AdminUsersPage() {
             <p className="mt-2 text-xs text-ink-muted">The user will be signed out of all sessions and must log in with the new password.</p>
 
             <label className="label mt-4">New password</label>
-            <input type="password" value={resetForm.pw} onChange={(e) => setResetForm((f) => ({ ...f, pw: e.target.value }))} placeholder="At least 8 characters" className="input" autoFocus />
+            <PasswordInput value={resetForm.pw} onChange={(e) => setResetForm((f) => ({ ...f, pw: e.target.value }))} placeholder="At least 8 characters" showStrength autoComplete="new-password" autoFocus />
             <label className="label mt-3">Confirm password</label>
-            <input type="password" value={resetForm.confirm} onChange={(e) => setResetForm((f) => ({ ...f, confirm: e.target.value }))} className="input" />
+            <PasswordInput value={resetForm.confirm} onChange={(e) => setResetForm((f) => ({ ...f, confirm: e.target.value }))} autoComplete="new-password" />
+            {resetForm.confirm && resetForm.confirm !== resetForm.pw && <p className="mt-1 text-xs text-red-400">Passwords do not match.</p>}
 
             <div className="mt-5 flex gap-2">
               <button onClick={() => setResetTarget(null)} className="btn-ghost flex-1">Cancel</button>
