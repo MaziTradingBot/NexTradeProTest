@@ -12,111 +12,40 @@ export interface Ticker {
   volume: number;
 }
 
-const SYMBOLS = [
-  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-  'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-  'MATICUSDT', 'LTCUSDT',
-];
-
 /**
- * Live ticker feed. Seeds from the REST endpoint for instant data, then
- * upgrades to a Binance public WebSocket stream for real-time ticks. Falls
- * back to REST polling if the socket can't connect (restricted networks).
+ * Live ticker feed. Polls the NexTradePro backend (`/api/market/tickers`),
+ * which is kept fresh by the server-side Market Data Service. The frontend
+ * never talks to an exchange directly (see docs/07-Market-Data-Service.md).
  */
-export function useTickers(pollMs = 6000) {
+export function useTickers(pollMs = 5000) {
   const [tickers, setTickers] = useState<Ticker[]>([]);
   const [loading, setLoading] = useState(true);
   const [live, setLive] = useState(false);
-  const mapRef = useRef<Map<string, Ticker>>(new Map());
+  const activeRef = useRef(true);
 
   useEffect(() => {
-    let active = true;
-    let ws: WebSocket | null = null;
-    let pollId: ReturnType<typeof setInterval> | null = null;
+    activeRef.current = true;
 
-    const commit = () => {
-      if (!active) return;
-      setTickers(SYMBOLS.map((s) => mapRef.current.get(s)).filter(Boolean) as Ticker[]);
-    };
-
-    const seed = async () => {
+    const load = async () => {
       try {
-        const data = await api.get<Ticker[]>('/api/market/tickers');
-        if (!active) return;
-        data.forEach((t) => mapRef.current.set(t.symbol, t));
-        commit();
+        const data = await api.get<Ticker[]>('/api/market/tickers?limit=60');
+        if (!activeRef.current) return;
+        setTickers(data);
+        setLive(true);
         setLoading(false);
       } catch {
-        if (active) setLoading(false);
+        if (activeRef.current) {
+          setLive(false);
+          setLoading(false);
+        }
       }
     };
 
-    const startPolling = () => {
-      if (pollId) return;
-      pollId = setInterval(seed, pollMs);
-    };
-
-    const connectWs = () => {
-      try {
-        const streams = SYMBOLS.map((s) => `${s.toLowerCase()}@miniTicker`).join('/');
-        ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
-
-        const failTimer = setTimeout(() => {
-          if (ws && ws.readyState !== WebSocket.OPEN) {
-            ws.close();
-            startPolling();
-          }
-        }, 4000);
-
-        ws.onopen = () => {
-          clearTimeout(failTimer);
-          if (active) setLive(true);
-          if (pollId) {
-            clearInterval(pollId);
-            pollId = null;
-          }
-        };
-
-        ws.onmessage = (ev) => {
-          try {
-            const { data } = JSON.parse(ev.data as string);
-            if (!data?.s) return;
-            const open = parseFloat(data.o);
-            const close = parseFloat(data.c);
-            mapRef.current.set(data.s, {
-              symbol: data.s,
-              price: close,
-              change: open ? ((close - open) / open) * 100 : 0,
-              high: parseFloat(data.h),
-              low: parseFloat(data.l),
-              volume: parseFloat(data.q),
-            });
-            commit();
-          } catch {
-            /* ignore malformed frame */
-          }
-        };
-
-        ws.onerror = () => {
-          if (active) setLive(false);
-          startPolling();
-        };
-        ws.onclose = () => {
-          if (active) setLive(false);
-          startPolling();
-        };
-      } catch {
-        startPolling();
-      }
-    };
-
-    seed();
-    connectWs();
-
+    load();
+    const id = setInterval(load, pollMs);
     return () => {
-      active = false;
-      if (ws) ws.close();
-      if (pollId) clearInterval(pollId);
+      activeRef.current = false;
+      clearInterval(id);
     };
   }, [pollMs]);
 

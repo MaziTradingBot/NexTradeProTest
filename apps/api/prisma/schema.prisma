@@ -438,6 +438,60 @@ model ApiKey {
 }
 
 // ---------------------------------------------------------------------------
+// Market Data Service — the Coin universe (150+ assets). Coins are seeded and
+// kept fresh by the background sync job; they are NEVER hardcoded in the app.
+// The frontend only ever reads coin data through the backend.
+// ---------------------------------------------------------------------------
+
+model Coin {
+  id             String   @id @default(cuid())
+  symbol         String   @unique // BTC, ETH, SOL ...
+  pair           String? // trading pair on the exchange, e.g. BTCUSDT
+  name           String
+  logoUrl        String?
+  // Latest market snapshot (refreshed by the sync job).
+  price          Float    @default(0)
+  change24h      Float    @default(0) // percent
+  change7d       Float    @default(0) // percent
+  high24h        Float    @default(0)
+  low24h         Float    @default(0)
+  marketCap      Float    @default(0)
+  volume24h      Float    @default(0)
+  rank           Int?
+  circulating    Float?
+  maxSupply      Float?
+  // Static metadata.
+  website        String?
+  explorer       String?
+  whitepaper     String?
+  // Comma-separated category keys (see MarketCategory). Kept denormalized for
+  // fast filtering; also queryable via the `categories` relation.
+  categoryKeys   String   @default("")
+  // Admin/trading controls.
+  tradingEnabled Boolean  @default(true)
+  demoEnabled    Boolean  @default(true)
+  visible        Boolean  @default(true)
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  categories     CoinCategory[]
+
+  @@index([rank])
+  @@index([marketCap])
+  @@index([visible])
+}
+
+model CoinCategory {
+  id       String @id @default(cuid())
+  coinId   String
+  category String // LAYER1, LAYER2, DEFI, MEME, AI, GAMING, METAVERSE, STABLECOIN, INFRA, EXCHANGE, PRIVACY, RWA
+  coin     Coin   @relation(fields: [coinId], references: [id], onDelete: Cascade)
+
+  @@unique([coinId, category])
+  @@index([category])
+}
+
+// ---------------------------------------------------------------------------
 // Announcements / news — managed by Content Admins, shown on the public site
 // ---------------------------------------------------------------------------
 

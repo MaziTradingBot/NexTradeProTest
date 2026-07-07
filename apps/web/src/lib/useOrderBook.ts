@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { api } from './api';
 
 export interface DepthLevel {
   price: number;
@@ -14,66 +15,49 @@ export interface Trade {
 }
 
 /**
- * Live order book (partial depth) + recent trades from Binance public
- * WebSocket streams. Exposes `live` so callers can fall back to a simulated
- * book when the socket is unavailable (restricted networks).
+ * Live order book (partial depth) + recent trades. Polls the NexTradePro
+ * backend, which proxies the exchange (see docs/07-Market-Data-Service.md) —
+ * the frontend never connects to Binance/Bybit directly. `live` reflects
+ * whether the backend returned data; callers fall back to a simulated book.
  */
 export function useOrderBook(symbol: string) {
   const [bids, setBids] = useState<DepthLevel[]>([]);
   const [asks, setAsks] = useState<DepthLevel[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [live, setLive] = useState(false);
-  const tradesRef = useRef<Trade[]>([]);
+  const activeRef = useRef(true);
 
   useEffect(() => {
-    let active = true;
-    let ws: WebSocket | null = null;
-    const s = symbol.toLowerCase();
+    activeRef.current = true;
+    const s = symbol.toUpperCase();
 
     setBids([]);
     setAsks([]);
     setTrades([]);
-    tradesRef.current = [];
     setLive(false);
 
-    try {
-      ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${s}@depth20@100ms/${s}@aggTrade`);
+    const load = async () => {
+      try {
+        const [book, tr] = await Promise.all([
+          api.get<{ bids: DepthLevel[]; asks: DepthLevel[] }>(`/api/market/orderbook?symbol=${s}`),
+          api.get<Trade[]>(`/api/market/trades?symbol=${s}`),
+        ]);
+        if (!activeRef.current) return;
+        const hasBook = (book.bids?.length ?? 0) > 0 || (book.asks?.length ?? 0) > 0;
+        setBids(book.bids ?? []);
+        setAsks(book.asks ?? []);
+        setTrades(tr ?? []);
+        setLive(hasBook);
+      } catch {
+        if (activeRef.current) setLive(false);
+      }
+    };
 
-      const failTimer = setTimeout(() => {
-        if (ws && ws.readyState !== WebSocket.OPEN) ws.close();
-      }, 4000);
-
-      ws.onopen = () => {
-        clearTimeout(failTimer);
-        if (active) setLive(true);
-      };
-
-      ws.onmessage = (ev) => {
-        if (!active) return;
-        try {
-          const { stream, data } = JSON.parse(ev.data as string);
-          if (stream?.includes('@depth')) {
-            setAsks((data.asks as string[][]).map(([p, q]) => ({ price: +p, size: +q })).filter((l) => l.size > 0).slice(0, 12));
-            setBids((data.bids as string[][]).map(([p, q]) => ({ price: +p, size: +q })).filter((l) => l.size > 0).slice(0, 12));
-          } else if (stream?.includes('@aggTrade')) {
-            const t: Trade = { price: +data.p, size: +data.q, time: data.T, buyerMaker: data.m };
-            tradesRef.current = [t, ...tradesRef.current].slice(0, 30);
-            setTrades(tradesRef.current);
-          }
-        } catch {
-          /* ignore malformed frame */
-        }
-      };
-
-      ws.onerror = () => active && setLive(false);
-      ws.onclose = () => active && setLive(false);
-    } catch {
-      setLive(false);
-    }
-
+    load();
+    const id = setInterval(load, 1500);
     return () => {
-      active = false;
-      if (ws) ws.close();
+      activeRef.current = false;
+      clearInterval(id);
     };
   }, [symbol]);
 

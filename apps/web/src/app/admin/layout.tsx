@@ -8,8 +8,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <AuthGuard adminOnly>
       <div className="flex min-h-screen">
         <AdminSidebar />
-        <div className="flex-1 overflow-x-hidden">
-          <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-10">{children}</div>
+        <div className="min-w-0 flex-1 overflow-x-hidden">
+          <div className="mx-auto max-w-6xl px-4 pb-8 pt-20 sm:px-6 lg:px-10 lg:py-8">{children}</div>
         </div>
       </div>
     </AuthGuard>

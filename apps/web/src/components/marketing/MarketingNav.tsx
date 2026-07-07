@@ -55,7 +55,7 @@ export function MarketingNav() {
           <Wordmark />
         </Link>
 
-        <div className="hidden items-center gap-1 md:flex">
+        <div className="hidden items-center gap-1 lg:flex">
           {LINKS.map((l) => (
             <Link
               key={l.href}
@@ -70,7 +70,7 @@ export function MarketingNav() {
           ))}
         </div>
 
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="hidden items-center gap-2 lg:flex">
           {user ? (
             <Link href="/dashboard" className="btn-primary rounded-full px-5 py-2 text-sm">
               Dashboard
@@ -87,13 +87,13 @@ export function MarketingNav() {
           )}
         </div>
 
-        <button className="rounded-lg p-2 text-ink md:hidden" onClick={() => setOpen((v) => !v)} aria-label="Menu">
+        <button className="rounded-lg p-2 text-ink lg:hidden" onClick={() => setOpen((v) => !v)} aria-label="Menu">
           {open ? <X size={22} /> : <Menu size={22} />}
         </button>
       </nav>
 
       {open && (
-        <div className="border-t border-brand-blue/10 bg-bg/95 px-4 py-4 backdrop-blur-xl md:hidden">
+        <div className="border-t border-brand-blue/10 bg-bg/95 px-4 py-4 backdrop-blur-xl lg:hidden">
           <div className="space-y-1">
             {LINKS.map((l) => (
               <Link

@@ -15,6 +15,7 @@ import brokerRoutes from './routes/broker.routes';
 import marketRoutes from './routes/market.routes';
 import contentRoutes from './routes/content.routes';
 import { startTradingEngine } from './lib/tradingEngine';
+import { startMarketData } from './lib/marketData';
 
 const app = express();
 
@@ -88,6 +89,8 @@ app.listen(env.port, () => {
   console.log(`🚀 NexTradePro API listening on :${env.port} (${env.nodeEnv})`);
   // Evaluate SL/TP and margin stop-outs in the background.
   startTradingEngine();
+  // Seed the coin universe and keep market data fresh (prices + metadata).
+  startMarketData();
 });
 
 export default app;

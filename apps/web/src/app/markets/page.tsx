@@ -1,202 +1,281 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, TrendingUp, TrendingDown, Activity, Star, Bell, Trash2 } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, Activity, Star, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { MarketingNav } from '@/components/marketing/MarketingNav';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
-import { useTickers, assetName } from '@/lib/useTickers';
 import { formatCompact, cn } from '@/lib/utils';
 
-interface Alert {
-  id: string;
+interface Coin {
   symbol: string;
-  condition: 'ABOVE' | 'BELOW' | 'PCT_CHANGE';
-  value: string;
-  active: boolean;
-  triggeredAt: string | null;
+  pair: string;
+  name: string;
+  logoUrl: string | null;
+  price: number;
+  change24h: number;
+  change7d: number;
+  marketCap: number;
+  volume24h: number;
+  rank: number | null;
+  categories: string[];
+}
+interface CoinsResponse { coins: Coin[]; total: number; page: number; pages: number }
+interface Category { key: string; label: string; count: number | null }
+
+const fmtPrice = (p: number) =>
+  p >= 1 ? p.toLocaleString(undefined, { maximumFractionDigits: 2 }) : p.toLocaleString(undefined, { maximumFractionDigits: 8 });
+
+function CoinLogo({ coin, size = 34 }: { coin: Pick<Coin, 'logoUrl' | 'symbol'>; size?: number }) {
+  const [err, setErr] = useState(false);
+  if (coin.logoUrl && !err) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={coin.logoUrl} alt={coin.symbol} width={size} height={size} onError={() => setErr(true)} className="rounded-full" style={{ width: size, height: size }} />;
+  }
+  return (
+    <div className="flex items-center justify-center rounded-full bg-[#0F1D35] text-xs font-bold text-[#0EA5E9]" style={{ width: size, height: size }}>
+      {coin.symbol.slice(0, 3)}
+    </div>
+  );
 }
 
+function Pct({ value }: { value: number }) {
+  const up = value >= 0;
+  return (
+    <span className={cn('inline-flex items-center justify-end gap-1 font-semibold tabular-nums', up ? 'text-[#34D399]' : 'text-[#F87171]')}>
+      {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+      {Math.abs(value).toFixed(2)}%
+    </span>
+  );
+}
+
+const SORTS: { key: string; label: string; className: string }[] = [
+  { key: 'rank', label: '#', className: 'hidden w-10 sm:table-cell' },
+  { key: 'price', label: 'Price', className: 'text-right' },
+  { key: 'change24h', label: '24h', className: 'text-right' },
+  { key: 'change7d', label: '7d', className: 'hidden text-right lg:table-cell' },
+  { key: 'marketCap', label: 'Market Cap', className: 'hidden text-right md:table-cell' },
+  { key: 'volume24h', label: 'Volume (24h)', className: 'hidden text-right xl:table-cell' },
+];
+
 export default function MarketsPage() {
-  const { tickers, loading, live } = useTickers(6000);
   const { user } = useAuth();
+  const [coins, setCoins] = useState<Coin[]>([]);
+  const [cats, setCats] = useState<Category[]>([]);
+  const [category, setCategory] = useState('ALL');
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+  const [sort, setSort] = useState('rank');
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [fng, setFng] = useState<{ value: number; label: string } | null>(null);
   const [watch, setWatch] = useState<Set<string>>(new Set());
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [alertForm, setAlertForm] = useState({ symbol: 'BTCUSDT', condition: 'ABOVE', value: '' });
   const [onlyWatch, setOnlyWatch] = useState(false);
+  const firstLoad = useRef(true);
+
+  // Debounce search.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    api.get<Category[]>('/api/market/categories').then(setCats).catch(() => {});
+    api.get<{ value: number; label: string }>('/api/market/fear-greed').then(setFng).catch(() => {});
+  }, []);
 
   const loadWatch = useCallback(() => {
     if (!user) return;
     api.get<string[]>('/api/account/watchlist').then((s) => setWatch(new Set(s))).catch(() => {});
-    api.get<Alert[]>('/api/account/alerts').then(setAlerts).catch(() => {});
   }, [user]);
-
-  useEffect(() => {
-    api.get<{ value: number; label: string }>('/api/market/fear-greed').then(setFng).catch(() => {});
-  }, []);
   useEffect(loadWatch, [loadWatch]);
 
-  const toggleWatch = async (symbol: string) => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ category, sort, order, page: String(page), limit: '50' });
+      if (debouncedQ) params.set('search', debouncedQ);
+      if (onlyWatch && watch.size) params.set('symbols', [...watch].map((s) => s.replace('USDT', '')).join(','));
+      const res = await api.get<CoinsResponse>(`/api/market/coins?${params.toString()}`);
+      setCoins(res.coins);
+      setPages(res.pages || 1);
+      setTotal(res.total);
+    } catch {
+      setCoins([]);
+    } finally {
+      setLoading(false);
+      firstLoad.current = false;
+    }
+  }, [category, sort, order, page, debouncedQ, onlyWatch, watch]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Reset to page 1 when filters change.
+  useEffect(() => { setPage(1); }, [category, debouncedQ, onlyWatch]);
+
+  // Refresh prices periodically without a full skeleton flash.
+  useEffect(() => {
+    const id = setInterval(() => { if (!onlyWatch) load(); }, 15000);
+    return () => clearInterval(id);
+  }, [load, onlyWatch]);
+
+  const toggleSort = (key: string) => {
+    if (sort === key) setOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+    else { setSort(key); setOrder(key === 'rank' ? 'asc' : 'desc'); }
+  };
+
+  const toggleWatch = async (pair: string) => {
     if (!user) return;
-    const has = watch.has(symbol);
-    setWatch((w) => {
-      const n = new Set(w);
-      has ? n.delete(symbol) : n.add(symbol);
-      return n;
-    });
+    const has = watch.has(pair);
+    setWatch((w) => { const n = new Set(w); has ? n.delete(pair) : n.add(pair); return n; });
     try {
-      if (has) await api.del(`/api/account/watchlist/${symbol}`);
-      else await api.post('/api/account/watchlist', { symbol });
-    } catch {
-      loadWatch();
-    }
+      if (has) await api.del(`/api/account/watchlist/${pair}`);
+      else await api.post('/api/account/watchlist', { symbol: pair });
+    } catch { loadWatch(); }
   };
 
-  const createAlert = async () => {
-    const value = parseFloat(alertForm.value);
-    if (!value || value <= 0) return;
-    try {
-      await api.post('/api/account/alerts', { symbol: alertForm.symbol, condition: alertForm.condition, value });
-      setAlertForm((f) => ({ ...f, value: '' }));
-      loadWatch();
-    } catch {
-      /* ignore */
-    }
-  };
-  const deleteAlert = async (id: string) => {
-    await api.del(`/api/account/alerts/${id}`).catch(() => {});
-    setAlerts((a) => a.filter((x) => x.id !== id));
-  };
-
-  const filtered = tickers
-    .filter((t) => assetName(t.symbol).toLowerCase().includes(q.toLowerCase()))
-    .filter((t) => !onlyWatch || watch.has(t.symbol));
-  const gainers = [...tickers].sort((a, b) => b.change - a.change)[0];
-  const avg = tickers.length ? tickers.reduce((s, t) => s + t.change, 0) / tickers.length : 0;
+  const avg = useMemo(() => (coins.length ? coins.reduce((s, t) => s + t.change24h, 0) / coins.length : 0), [coins]);
+  const topMover = useMemo(() => [...coins].sort((a, b) => b.change24h - a.change24h)[0], [coins]);
 
   return (
     <div className="min-h-screen bg-bg text-[#E8F1FF]" style={{ fontFamily: "'Figtree', system-ui, sans-serif" }}>
       <MarketingNav />
 
       <section className="bg-gradient-to-b from-[#0F1D35] to-bg">
-        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h1 className="text-4xl font-extrabold tracking-tight text-[#E8F1FF]">Markets</h1>
-              <p className="mt-2 flex items-center gap-2 text-[#A0BDD8]">
-                Live cryptocurrency prices
-                <span className={cn('inline-flex items-center gap-1 text-xs font-semibold', live ? 'text-[#34D399]' : 'text-[#5E7A96]')}>
-                  <span className={cn('h-1.5 w-1.5 rounded-full', live ? 'bg-[#34D399]' : 'bg-[#5E7A96]')} />{live ? 'LIVE' : 'DELAYED'}
+            <div className="min-w-0">
+              <h1 className="text-3xl font-extrabold tracking-tight text-[#E8F1FF] sm:text-4xl">Markets</h1>
+              <p className="mt-2 flex items-center gap-2 text-sm text-[#A0BDD8] sm:text-base">
+                {total.toLocaleString()} cryptocurrencies · live prices
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#34D399]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#34D399]" />LIVE
                 </span>
               </p>
             </div>
             <div className="relative w-full sm:w-72">
               <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5E7A96]" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search assets…" className="w-full rounded-full border border-[#12233a] bg-bg-surface py-2.5 pl-10 pr-4 text-sm text-[#E8F1FF] placeholder:text-[#5E7A96] focus:border-[#0EA5E9] focus:outline-none" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search 150+ coins…" className="w-full rounded-full border border-[#12233a] bg-bg-surface py-2.5 pl-10 pr-4 text-sm text-[#E8F1FF] placeholder:text-[#5E7A96] focus:border-[#0EA5E9] focus:outline-none" />
             </div>
           </div>
 
-          {/* Sentiment stats */}
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          <div className="mt-6 grid gap-3 sm:grid-cols-3 sm:gap-4">
             {[
-              { label: 'Market bias (24h avg)', value: `${avg >= 0 ? '+' : ''}${avg.toFixed(2)}%`, tone: avg >= 0 ? 'up' : 'down' as const },
-              { label: 'Top mover', value: gainers ? `${assetName(gainers.symbol)} ${gainers.change >= 0 ? '+' : ''}${gainers.change.toFixed(1)}%` : '—', tone: 'up' as const },
-              { label: 'Fear & Greed', value: fng ? `${fng.value} · ${fng.label}` : '—', tone: 'neutral' as const },
+              { label: 'Market bias (24h avg)', value: `${avg >= 0 ? '+' : ''}${avg.toFixed(2)}%`, tone: avg >= 0 ? 'up' : 'down' },
+              { label: 'Top mover', value: topMover ? `${topMover.symbol} ${topMover.change24h >= 0 ? '+' : ''}${topMover.change24h.toFixed(1)}%` : '—', tone: 'up' },
+              { label: 'Fear & Greed', value: fng ? `${fng.value} · ${fng.label}` : '—', tone: 'neutral' },
             ].map((s) => (
-              <div key={s.label} className="rounded-2xl border border-[#12233a] bg-bg-surface p-5">
-                <div className="flex items-center gap-2 text-sm text-[#A0BDD8]"><Activity size={15} /> {s.label}</div>
-                <div className={cn('mt-1.5 text-xl font-bold', s.tone === 'up' ? 'text-[#34D399]' : s.tone === 'down' ? 'text-[#F87171]' : 'text-[#E8F1FF]')}>{s.value}</div>
+              <div key={s.label} className="rounded-2xl border border-[#12233a] bg-bg-surface p-4 sm:p-5">
+                <div className="flex items-center gap-2 text-xs text-[#A0BDD8] sm:text-sm"><Activity size={15} /> {s.label}</div>
+                <div className={cn('mt-1.5 text-lg font-bold sm:text-xl', s.tone === 'up' ? 'text-[#34D399]' : s.tone === 'down' ? 'text-[#F87171]' : 'text-[#E8F1FF]')}>{s.value}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-[1400px] px-4 pb-20 sm:px-6 lg:px-8">
+        {/* Category chips */}
+        <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {cats.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => setCategory(c.key)}
+              className={cn(
+                'shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-semibold transition sm:text-sm',
+                category === c.key ? 'border-[#0EA5E9] bg-[#0EA5E9]/15 text-[#0EA5E9]' : 'border-[#12233a] bg-bg-surface text-[#A0BDD8] hover:border-[#22D3EE]/40',
+              )}
+            >
+              {c.label}{c.count != null && <span className="ml-1.5 text-[#5E7A96]">{c.count}</span>}
+            </button>
+          ))}
+          {user && (
+            <button onClick={() => setOnlyWatch((v) => !v)} className={cn('ml-auto hidden shrink-0 items-center gap-1 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition sm:inline-flex sm:text-sm', onlyWatch ? 'border-brand-gold/50 bg-brand-gold/15 text-brand-gold' : 'border-[#12233a] bg-bg-surface text-[#A0BDD8]')}>
+              <Star size={13} fill={onlyWatch ? 'currentColor' : 'none'} /> Watchlist
+            </button>
+          )}
+        </div>
+
         <div className="overflow-hidden rounded-2xl border border-[#12233a] bg-bg-surface">
-          <div className="grid grid-cols-12 gap-4 border-b border-[#0F1D35] px-6 py-3 text-xs font-semibold uppercase tracking-wide text-[#5E7A96]">
-            <div className="col-span-5">Asset</div>
-            <div className="col-span-3 text-right">Price</div>
-            <div className="col-span-2 text-right">24h</div>
-            <div className="col-span-2 text-right">Volume</div>
-          </div>
-          {loading && tickers.length === 0 ? (
-            <div className="space-y-2 p-6">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-10 animate-pulse rounded bg-[#0F1D35]" />)}</div>
-          ) : (
-            <div className="divide-y divide-[#0F1D35]">
-              {filtered.map((t) => (
-                <Link key={t.symbol} href={`/trading?symbol=${t.symbol}`} className="grid grid-cols-12 items-center gap-4 px-6 py-4 transition hover:bg-[#080F1C]">
-                  <div className="col-span-5 flex items-center gap-3">
-                    {user && (
-                      <button
-                        onClick={(e) => { e.preventDefault(); toggleWatch(t.symbol); }}
-                        aria-label="Toggle watchlist"
-                        className={cn('shrink-0 transition', watch.has(t.symbol) ? 'text-brand-gold' : 'text-[#2E3F54] hover:text-[#5E7A96]')}
-                      >
-                        <Star size={16} fill={watch.has(t.symbol) ? 'currentColor' : 'none'} />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#0F1D35] text-xs uppercase tracking-wide text-[#5E7A96]">
+                  {user && <th className="w-9 px-3 py-3" />}
+                  {SORTS.map((s) => (
+                    <th key={s.key} className={cn('px-3 py-3 font-semibold sm:px-4', s.key === 'rank' ? s.className : '', s.key !== 'rank' && s.className)}>
+                      <button onClick={() => toggleSort(s.key)} className={cn('inline-flex items-center gap-1 hover:text-[#A0BDD8]', s.className.includes('text-right') && 'flex-row-reverse')}>
+                        {s.key === 'rank' ? s.label : <span>{s.label}</span>}
+                        {s.key !== 'rank' && <ArrowUpDown size={11} className={cn(sort === s.key ? 'text-[#0EA5E9]' : 'text-[#2E3F54]')} />}
                       </button>
-                    )}
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0F1D35] text-xs font-bold text-[#0EA5E9]">{assetName(t.symbol).slice(0, 3)}</div>
-                    <div>
-                      <div className="font-medium text-[#E8F1FF]">{assetName(t.symbol)}</div>
-                      <div className="text-xs text-[#5E7A96]">{t.symbol}</div>
-                    </div>
-                  </div>
-                  <div className="col-span-3 text-right font-medium text-[#E8F1FF]">${t.price.toLocaleString()}</div>
-                  <div className={cn('col-span-2 flex items-center justify-end gap-1 text-sm font-semibold', t.change >= 0 ? 'text-[#34D399]' : 'text-[#F87171]')}>
-                    {t.change >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}{Math.abs(t.change).toFixed(2)}%
-                  </div>
-                  <div className="col-span-2 text-right text-sm text-[#5E7A96]">${formatCompact(t.volume)}</div>
-                </Link>
-              ))}
+                    </th>
+                  ))}
+                  <th className="px-3 py-3 text-left font-semibold sm:px-4">
+                    <button onClick={() => toggleSort('name')} className="inline-flex items-center gap-1 hover:text-[#A0BDD8]">Asset</button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#0F1D35]">
+                {loading && coins.length === 0 ? (
+                  Array.from({ length: 12 }).map((_, i) => (
+                    <tr key={i}><td colSpan={9} className="px-4 py-3"><div className="h-6 animate-pulse rounded bg-[#0F1D35]" /></td></tr>
+                  ))
+                ) : coins.length === 0 ? (
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-[#5E7A96]">No coins match your filters.</td></tr>
+                ) : (
+                  coins.map((c) => (
+                    <tr key={c.symbol} className="group transition hover:bg-[#080F1C]">
+                      {user && (
+                        <td className="px-3 py-3.5">
+                          <button onClick={() => toggleWatch(c.pair)} aria-label="Toggle watchlist" className={cn('transition', watch.has(c.pair) ? 'text-brand-gold' : 'text-[#2E3F54] hover:text-[#5E7A96]')}>
+                            <Star size={15} fill={watch.has(c.pair) ? 'currentColor' : 'none'} />
+                          </button>
+                        </td>
+                      )}
+                      <td className="hidden px-3 py-3.5 text-[#5E7A96] sm:table-cell sm:px-4">{c.rank ?? '—'}</td>
+                      <td className="px-3 py-3.5 text-right font-medium tabular-nums text-[#E8F1FF] sm:px-4">${fmtPrice(c.price)}</td>
+                      <td className="px-3 py-3.5 text-right sm:px-4"><Pct value={c.change24h} /></td>
+                      <td className="hidden px-3 py-3.5 text-right lg:table-cell sm:px-4"><Pct value={c.change7d} /></td>
+                      <td className="hidden px-3 py-3.5 text-right tabular-nums text-[#A0BDD8] md:table-cell sm:px-4">${formatCompact(c.marketCap)}</td>
+                      <td className="hidden px-3 py-3.5 text-right tabular-nums text-[#5E7A96] xl:table-cell sm:px-4">${formatCompact(c.volume24h)}</td>
+                      <td className="px-3 py-3.5 sm:px-4">
+                        <Link href={`/coins/${c.symbol}`} className="flex items-center gap-3">
+                          <CoinLogo coin={c} />
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-[#E8F1FF] group-hover:text-[#22D3EE]">{c.name}</div>
+                            <div className="text-xs text-[#5E7A96]">{c.symbol}</div>
+                          </div>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {pages > 1 && (
+            <div className="flex items-center justify-between border-t border-[#0F1D35] px-4 py-3 text-sm text-[#A0BDD8]">
+              <span>Page {page} of {pages}</span>
+              <div className="flex gap-2">
+                <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="inline-flex items-center gap-1 rounded-lg border border-[#12233a] px-3 py-1.5 text-xs font-semibold disabled:opacity-40 hover:enabled:border-[#22D3EE]/40"><ChevronLeft size={14} /> Prev</button>
+                <button disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))} className="inline-flex items-center gap-1 rounded-lg border border-[#12233a] px-3 py-1.5 text-xs font-semibold disabled:opacity-40 hover:enabled:border-[#22D3EE]/40">Next <ChevronRight size={14} /></button>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Price alerts (logged-in users) */}
-        {user && (
-          <div className="card mt-6">
-            <div className="mb-4 flex items-center gap-2">
-              <Bell size={18} className="text-brand-blue" />
-              <h2 className="font-semibold text-[#E8F1FF]">Price alerts</h2>
-              <button onClick={() => setOnlyWatch((v) => !v)} className={cn('ml-auto rounded-lg px-3 py-1.5 text-xs font-semibold transition', onlyWatch ? 'bg-brand-gold/15 text-brand-gold' : 'bg-white/5 text-[#5E7A96]')}>
-                <Star size={12} className="mr-1 inline" /> {onlyWatch ? 'Watchlist only' : 'Show watchlist'}
-              </button>
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <select value={alertForm.symbol} onChange={(e) => setAlertForm((f) => ({ ...f, symbol: e.target.value }))} className="input max-w-[140px]">
-                {tickers.map((t) => <option key={t.symbol} value={t.symbol}>{assetName(t.symbol)}</option>)}
-              </select>
-              <select value={alertForm.condition} onChange={(e) => setAlertForm((f) => ({ ...f, condition: e.target.value }))} className="input max-w-[150px]">
-                <option value="ABOVE">Price above</option>
-                <option value="BELOW">Price below</option>
-                <option value="PCT_CHANGE">% change ≥</option>
-              </select>
-              <input value={alertForm.value} onChange={(e) => setAlertForm((f) => ({ ...f, value: e.target.value }))} type="number" placeholder={alertForm.condition === 'PCT_CHANGE' ? '%' : 'Price'} className="input max-w-[120px]" />
-              <button onClick={createAlert} className="btn-primary">Add alert</button>
-            </div>
-            <div className="mt-4 space-y-2">
-              {alerts.length === 0 && <p className="text-sm text-[#5E7A96]">No alerts yet. You’ll be notified when a condition is met.</p>}
-              {alerts.map((a) => (
-                <div key={a.id} className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-2.5 text-sm">
-                  <span className="text-[#E8F1FF]">
-                    <span className="font-semibold">{assetName(a.symbol)}</span>{' '}
-                    <span className="text-[#5E7A96]">{a.condition === 'ABOVE' ? '≥' : a.condition === 'BELOW' ? '≤' : 'moves ≥'}</span>{' '}
-                    <span className="font-mono">{parseFloat(a.value).toLocaleString()}{a.condition === 'PCT_CHANGE' ? '%' : ''}</span>
-                  </span>
-                  <span className="flex items-center gap-3">
-                    <span className={cn('badge', a.active ? 'bg-brand-emerald/15 text-brand-emerald' : 'bg-white/10 text-[#5E7A96]')}>{a.active ? 'Active' : 'Triggered'}</span>
-                    <button onClick={() => deleteAlert(a.id)} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <p className="mt-4 text-center text-xs text-[#5E7A96]">
+          Market data served by the NexTradePro Market Data Service. Prices are indicative and for demonstration.
+        </p>
       </section>
 
       <MarketingFooter />
