@@ -106,7 +106,7 @@ function DashboardInner() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/deposit" className="btn-ghost">
+          <Link href="/wallet" className="btn-ghost">
             Deposit
           </Link>
           <Link href="/wallet" className="btn-ghost">
