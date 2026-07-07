@@ -13,7 +13,6 @@ import { useAuth } from '@/lib/store';
 
 function SettingsInner() {
   const { user, loadMe } = useAuth();
-  const [fullName, setFullName] = useState(user?.fullName ?? '');
   const [twoFactor, setTwoFactor] = useState(false);
   const [setup, setSetup] = useState<{ secret: string; otpauth: string } | null>(null);
   const [code, setCode] = useState('');
@@ -47,15 +46,8 @@ function SettingsInner() {
   };
 
   useEffect(() => {
-    setFullName(user?.fullName ?? '');
     setTwoFactor(!!user?.twoFactor);
   }, [user]);
-
-  const saveProfile = async () => {
-    await api.patch('/api/account/profile', { fullName });
-    await loadMe();
-    flash('Profile updated');
-  };
 
   const changePassword = async () => {
     setPwError(null);
@@ -132,18 +124,19 @@ function SettingsInner() {
           <h2 className="font-semibold text-white">Profile</h2>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="label">Full name</span>
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="input" />
-          </label>
-          <label className="block">
-            <span className="label">Email</span>
-            <input value={user?.email ?? ''} disabled className="input opacity-60" />
-          </label>
+          <div>
+            <span className="label flex items-center gap-1.5">Full name <Lock size={11} className="text-slate-500" /></span>
+            <input value={user?.fullName ?? ''} disabled readOnly className="input cursor-not-allowed opacity-60" />
+          </div>
+          <div>
+            <span className="label flex items-center gap-1.5">Email <Lock size={11} className="text-slate-500" /></span>
+            <input value={user?.email ?? ''} disabled readOnly className="input cursor-not-allowed opacity-60" />
+          </div>
         </div>
-        <button onClick={saveProfile} className="btn-primary mt-4">
-          Save changes
-        </button>
+        <p className="mt-3 flex items-start gap-2 text-xs text-slate-500">
+          <Lock size={13} className="mt-0.5 shrink-0" />
+          Your legal name is protected and can’t be changed here. To update it, contact support — a legal name change requires identity verification and administrator approval. Email changes use the secure flow below.
+        </p>
       </div>
 
       {/* Change password */}

@@ -847,13 +847,11 @@ router.get('/deposit-addresses', async (_req, res) => {
   }
 });
 
-// PATCH /api/account/profile — update display name
-router.patch('/profile', async (req, res) => {
-  const schema = z.object({ fullName: z.string().min(2) });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid name' });
-  await prisma.user.update({ where: { id: req.user!.id }, data: { fullName: parsed.data.fullName } });
-  res.json({ ok: true });
+// PATCH /api/account/profile — legal name is a protected identity field and
+// cannot be self-changed. A legal name change requires identity verification and
+// administrator approval (admins update it via the back office).
+router.patch('/profile', async (_req, res) => {
+  return res.status(403).json({ error: 'Your legal name is protected and cannot be changed here. Please contact support — a name change requires identity verification and administrator approval.' });
 });
 
 // GET /api/account/2fa — current status

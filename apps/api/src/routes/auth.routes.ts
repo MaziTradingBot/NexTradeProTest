@@ -138,8 +138,10 @@ router.post('/register', async (req, res) => {
   return res.status(201).json({
     user: { id: user.id, email: user.email, fullName: user.fullName },
     accessToken: access,
-    // SMTP not configured in the demo — surface the link so it can be completed.
-    demoVerifyUrl: verifyUrl,
+    // Only surface the verification link outside production. In production the
+    // token is emailed and never returned in the response (avoids leaking it in
+    // the network tab / dev tools).
+    ...(env.isProd ? {} : { demoVerifyUrl: verifyUrl }),
   });
 });
 
@@ -223,7 +225,7 @@ router.post('/resend-verification', authenticate, async (req, res) => {
   if (!user) return res.status(404).json({ error: 'Not found' });
   if (user.emailVerified) return res.json({ ok: true, alreadyVerified: true });
   const url = await issueEmailVerification(user.id, user.email);
-  return res.json({ ok: true, demoVerifyUrl: url });
+  return res.json({ ok: true, ...(env.isProd ? {} : { demoVerifyUrl: url }) });
 });
 
 // POST /api/auth/google — sign in / sign up with a Google ID token.
@@ -360,9 +362,10 @@ router.post('/forgot-password', async (req, res) => {
   // Email delivery (SMTP) is not configured for this demo deployment, so the
   // reset link is returned in the response and logged. In production this URL
   // would be emailed to the user instead of returned.
-  // eslint-disable-next-line no-console
-  console.log(`🔑 Password reset link for ${user.email}: ${resetUrl}`);
-  return res.json({ ...generic, demo: true, resetUrl });
+  await sendEmail(user.email, 'Reset your NexTradePro password', `Reset your password using this link (valid for 30 minutes):\n${resetUrl}`);
+  // Never return the reset token/URL in production — it would be visible in the
+  // network tab. Outside production it's surfaced so demos work without SMTP.
+  return res.json({ ...generic, ...(env.isProd ? {} : { demo: true, resetUrl }) });
 });
 
 // POST /api/auth/reset-password — consume the token and set a new password.
