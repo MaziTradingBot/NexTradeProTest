@@ -142,7 +142,7 @@ function CryptoDeposit({ mode, onDone }: { mode: Mode; onDone: () => void }) {
               <QrCode text={current.address} size={160} />
               <span className="absolute right-1.5 top-1.5 rounded-md bg-black/60 p-1 text-white opacity-0 transition group-hover:opacity-100"><Maximize2 size={13} /></span>
             </button>
-            <div className="min-w-0 flex-1">
+            <div className="w-full min-w-0 sm:flex-1">
               <label className="label">{current.asset} deposit address ({current.network})</label>
               <div className="flex items-center gap-2">
                 <code className="min-w-0 flex-1 truncate rounded-lg bg-black/30 px-3 py-2.5 font-mono text-sm text-white">{current.address}</code>

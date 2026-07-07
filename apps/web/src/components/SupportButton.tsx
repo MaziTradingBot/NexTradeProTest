@@ -1,10 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MessageCircle, X, Send } from 'lucide-react';
 
 export function SupportButton() {
   const [open, setOpen] = useState(false);
+
+  // Allow other UI (e.g. the profile menu's "Support" item) to open the chat.
+  useEffect(() => {
+    const openChat = () => setOpen(true);
+    window.addEventListener('nxp:support', openChat);
+    return () => window.removeEventListener('nxp:support', openChat);
+  }, []);
+
   const [messages, setMessages] = useState<{ from: 'bot' | 'me'; text: string }[]>([
     { from: 'bot', text: 'Hi! I’m the NexTradePro assistant. Ask me anything about the platform.' },
   ]);
@@ -30,7 +38,7 @@ export function SupportButton() {
     <>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-6 z-[60] flex h-14 w-14 items-center justify-center rounded-full bg-brand-gradient text-white shadow-glow transition hover:scale-105"
+        className="fixed bottom-20 right-6 z-[60] flex h-14 w-14 items-center justify-center rounded-full bg-brand-gradient text-white shadow-glow transition hover:scale-105 lg:bottom-6"
         aria-label="Open support chat"
       >
         {open ? <X size={22} /> : <MessageCircle size={24} />}

@@ -113,7 +113,7 @@ function WalletInner() {
       {/* Action tabs */}
       <div className="mt-6 flex gap-1.5 overflow-x-auto rounded-2xl border border-white/10 bg-black/20 p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)} className={cn('flex flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === t.key ? 'bg-brand-gradient text-white shadow-glow' : 'text-slate-400 hover:text-white')}>
+          <button key={t.key} onClick={() => setTab(t.key)} className={cn('flex flex-1 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-2.5 text-xs font-semibold transition sm:gap-2 sm:px-4 sm:text-sm', tab === t.key ? 'bg-brand-gradient text-white shadow-glow' : 'text-slate-400 hover:text-white')}>
             <t.icon size={16} /> {t.label}
           </button>
         ))}

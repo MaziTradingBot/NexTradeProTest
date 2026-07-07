@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/store';
 import { SessionSentinel } from './SessionSentinel';
+import { MobileAppNav } from './MobileAppNav';
 
 export function AuthGuard({
   children,
@@ -41,7 +42,9 @@ export function AuthGuard({
   return (
     <>
       <SessionSentinel />
-      {children}
+      {/* Extra bottom padding on mobile so content clears the bottom nav. */}
+      <div className="pb-16 lg:pb-0">{children}</div>
+      <MobileAppNav />
     </>
   );
 }
