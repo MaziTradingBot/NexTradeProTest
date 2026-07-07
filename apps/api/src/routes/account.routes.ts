@@ -393,8 +393,9 @@ router.get('/stats', async (req, res) => {
 // Resolve (and lazily create) the user's default watchlist, adopting any legacy
 // items that were not yet assigned to a list.
 async function ensureDefaultWatchlist(userId: string) {
+  // Always guarantee exactly one default list. If none is marked default (e.g.
+  // the user created a custom list first), create the Favorites default.
   let list = await prisma.watchlist.findFirst({ where: { userId, isDefault: true } });
-  if (!list) list = await prisma.watchlist.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' } });
   if (!list) list = await prisma.watchlist.create({ data: { userId, name: 'Favorites', emoji: '⭐', isDefault: true } });
   // Adopt orphaned legacy items into the default list.
   await prisma.watchlistItem.updateMany({ where: { userId, watchlistId: null }, data: { watchlistId: list.id } });
@@ -438,6 +439,7 @@ router.get('/watchlists', async (req, res) => {
 router.post('/watchlists', async (req, res) => {
   const parsed = z.object({ name: z.string().min(1).max(40), emoji: z.string().max(8).optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid list' });
+  await ensureDefaultWatchlist(req.user!.id); // guarantee a default exists first
   const count = await prisma.watchlist.count({ where: { userId: req.user!.id } });
   if (count >= 20) return res.status(409).json({ error: 'Watchlist limit reached' });
   const list = await prisma.watchlist.create({ data: { userId: req.user!.id, name: parsed.data.name, emoji: parsed.data.emoji } });
