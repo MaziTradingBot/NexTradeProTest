@@ -92,7 +92,7 @@ export default function HomePage() {
               <span className="h-1.5 w-1.5 animate-pulse-glow rounded-full bg-brand-cyan" />
               Institutional-grade crypto trading
             </span>
-            <h1 className="mt-6 font-display text-6xl font-bold uppercase leading-[0.95] tracking-tight text-ink sm:text-7xl">
+            <h1 className="mt-6 text-5xl font-bold leading-[1.05] tracking-tight text-ink sm:text-6xl">
               Trade crypto<br />
               like a <span className="gradient-text">pro</span>
             </h1>
@@ -111,7 +111,7 @@ export default function HomePage() {
             <div className="mt-10 grid max-w-lg grid-cols-4 gap-4">
               {STATS.map(([v, l]) => (
                 <div key={l}>
-                  <div className="font-display text-2xl font-bold text-ink">{v}</div>
+                  <div className="text-2xl font-bold text-ink">{v}</div>
                   <div className="mt-0.5 text-xs text-ink-muted">{l}</div>
                 </div>
               ))}
@@ -136,7 +136,7 @@ export default function HomePage() {
               </div>
 
               <div className="mt-4 flex items-end justify-between">
-                <div className="font-display text-4xl font-bold text-ink">{btc ? fmtPrice(btc.price) : '—'}</div>
+                <div className="text-4xl font-bold tracking-tight text-ink">{btc ? fmtPrice(btc.price) : '—'}</div>
                 {btc && (
                   <div className={cn('flex items-center gap-1 text-sm font-semibold', btc.change >= 0 ? 'text-brand-emerald' : 'text-brand-red')}>
                     {btc.change >= 0 ? <TrendingUp size={15} /> : <TrendingDown size={15} />}
@@ -194,7 +194,7 @@ export default function HomePage() {
         <div className="mb-6 flex items-end justify-between">
           <div>
             <div className="eyebrow">Markets</div>
-            <h2 className="mt-2 font-display text-3xl font-bold uppercase text-ink">Live crypto prices</h2>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink">Live crypto prices</h2>
           </div>
           <Link href="/markets" className="hidden text-sm font-semibold text-brand-blue hover:text-brand-cyan sm:flex sm:items-center sm:gap-1">
             All markets <ArrowRight size={15} />
@@ -245,7 +245,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
             <div className="eyebrow">Why NexTradePro</div>
-            <h2 className="mt-2 font-display text-4xl font-bold uppercase text-ink">Everything a serious trader needs</h2>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Everything a serious trader needs</h2>
             <p className="mt-4 text-ink-soft">A complete, professional trading stack — built for speed, clarity and control.</p>
           </div>
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -266,12 +266,12 @@ export default function HomePage() {
       <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <div className="eyebrow">Get started</div>
-          <h2 className="mt-2 font-display text-4xl font-bold uppercase text-ink">Start in three steps</h2>
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Start in three steps</h2>
         </div>
         <div className="mt-12 grid gap-6 md:grid-cols-3">
           {STEPS.map((s) => (
             <div key={s.n} className="relative">
-              <div className="font-display text-5xl font-bold text-brand-blue/25">{s.n}</div>
+              <div className="text-5xl font-bold text-brand-blue/25">{s.n}</div>
               <h3 className="mt-2 text-lg font-semibold text-ink">{s.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-soft">{s.desc}</p>
             </div>
@@ -284,7 +284,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
             <div className="eyebrow">Trusted by traders</div>
-            <h2 className="mt-2 font-display text-4xl font-bold uppercase text-ink">What traders say</h2>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink sm:text-4xl">What traders say</h2>
           </div>
           <div className="mt-12 grid gap-4 md:grid-cols-3">
             {TESTIMONIALS.map((t) => (
@@ -313,7 +313,7 @@ export default function HomePage() {
         <div className="relative overflow-hidden rounded-3xl border border-brand-blue/20 bg-gradient-to-br from-brand-blue/10 via-bg-surface to-brand-cyan/10 p-10 text-center sm:p-16">
           <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-brand-cyan/20 blur-[100px]" />
           <div className="relative">
-            <h2 className="font-display text-4xl font-bold uppercase text-ink sm:text-5xl">Ready to trade smarter?</h2>
+            <h2 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Ready to trade smarter?</h2>
             <p className="mx-auto mt-4 max-w-xl text-ink-soft">
               Open a free account and get a $100,000 demo balance with live prices. No deposit, no risk.
             </p>
