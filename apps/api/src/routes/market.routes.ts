@@ -187,6 +187,8 @@ router.get('/tickers', async (req, res) => {
       high: c.high24h,
       low: c.low24h,
       volume: c.volume24h,
+      fundingRate: c.fundingRate,
+      openInterest: c.openInterest,
     })));
   } catch {
     res.status(500).json({ error: 'Failed to load tickers' });

@@ -16,6 +16,7 @@ import { COIN_UNIVERSE } from './coinUniverse';
 const prisma = new PrismaClient();
 
 const BINANCE = 'https://api.binance.com/api/v3';
+const BINANCE_FUT = 'https://fapi.binance.com/fapi/v1';
 const BYBIT = 'https://api.bybit.com/v5/market';
 const COINGECKO = 'https://api.coingecko.com/api/v3';
 
@@ -144,12 +145,37 @@ async function fetchBybitPrices(pairs: string[]): Promise<Map<string, FastPrice>
   return out;
 }
 
+// Binance USDⓈ-M futures: funding rate + mark/index in one call (premiumIndex),
+// open interest per symbol. Pairs without a perp market are simply skipped.
+interface FundingData { fundingRate: number }
+
+async function fetchBinanceFunding(): Promise<Map<string, FundingData>> {
+  const resp = await fetch(`${BINANCE_FUT}/premiumIndex`);
+  if (!resp.ok) throw new Error(`Binance funding ${resp.status}`);
+  const json = (await resp.json()) as Array<Record<string, string>>;
+  const out = new Map<string, FundingData>();
+  for (const t of json) out.set(t.symbol, { fundingRate: parseFloat(t.lastFundingRate) });
+  return out;
+}
+
+async function fetchBinanceOI(pair: string): Promise<number | null> {
+  try {
+    const r = await fetch(`${BINANCE_FUT}/openInterest?symbol=${pair}`);
+    if (!r.ok) return null;
+    const j = (await r.json()) as { openInterest?: string };
+    return j.openInterest ? parseFloat(j.openInterest) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Sync jobs
 // ---------------------------------------------------------------------------
 
 let lastMetaSync = 0;
 let lastPriceSync = 0;
+let lastFuturesSync = 0;
 
 export async function syncMetadata(): Promise<void> {
   let markets: Map<string, GeckoMarket>;
@@ -217,8 +243,42 @@ export async function syncPrices(): Promise<void> {
   lastPriceSync = Date.now();
 }
 
+// Refresh perp funding rate + open interest for the top coins from Binance
+// Futures. Funding comes in one batched call; OI is per-symbol so we bound it to
+// the top ~50 by rank. Pairs without a perp market are left null.
+export async function syncFutures(): Promise<void> {
+  let funding: Map<string, FundingData>;
+  try {
+    funding = await fetchBinanceFunding();
+    if (funding.size === 0) return;
+  } catch {
+    return; // keep last-known snapshot
+  }
+  const coins = await prisma.coin.findMany({
+    where: { pair: { not: null } },
+    select: { id: true, pair: true },
+    orderBy: { rank: { sort: 'asc', nulls: 'last' } },
+    take: 50,
+  });
+  await Promise.all(
+    coins.map(async (coin) => {
+      const pair = coin.pair!;
+      const f = funding.get(pair);
+      const oi = await fetchBinanceOI(pair);
+      if (!f && oi == null) return;
+      await prisma.coin
+        .update({
+          where: { id: coin.id },
+          data: { ...(f ? { fundingRate: f.fundingRate } : {}), ...(oi != null ? { openInterest: oi } : {}) },
+        })
+        .catch(() => {});
+    }),
+  );
+  lastFuturesSync = Date.now();
+}
+
 export function marketDataStatus() {
-  return { seeded, lastMetaSync, lastPriceSync };
+  return { seeded, lastMetaSync, lastPriceSync, lastFuturesSync };
 }
 
 // ---------------------------------------------------------------------------
@@ -242,8 +302,10 @@ export async function startMarketData(): Promise<void> {
   // Initial sync (don't block startup).
   syncMetadata().catch(() => {});
   syncPrices().catch(() => {});
+  syncFutures().catch(() => {});
 
-  // Metadata: every 5 minutes. Price: every 12 seconds.
+  // Metadata: every 5 minutes. Price: every 12 seconds. Futures: every 90s.
   setInterval(() => { syncMetadata().catch(() => {}); }, 5 * 60 * 1000);
   setInterval(() => { syncPrices().catch(() => {}); }, 12 * 1000);
+  setInterval(() => { syncFutures().catch(() => {}); }, 90 * 1000);
 }

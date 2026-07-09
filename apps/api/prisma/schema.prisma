@@ -561,6 +561,9 @@ model Coin {
   low24h         Float    @default(0)
   marketCap      Float    @default(0)
   volume24h      Float    @default(0)
+  // Perp/futures snapshot (refreshed by the futures sync job; null = no perp).
+  fundingRate    Float? // funding rate as a decimal, e.g. 0.0001 = 0.01% / 8h
+  openInterest   Float? // open interest in base units (notional = OI * price)
   rank           Int?
   circulating    Float?
   maxSupply      Float?

@@ -279,8 +279,14 @@ function TradingTerminal() {
         const dp = price < 2 ? 4 : 2;
         const compact = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n.toFixed(0));
         const indexPrice = price * (1 + Math.sin(price * 0.001) * 0.0003);
-        const funding = (ticker.change >= 0 ? 1 : -1) * (0.005 + Math.abs(ticker.change) * 0.0009);
-        const oi = ticker.volume * price * 0.12;
+        // Real perp funding / OI from the market-data service when available,
+        // otherwise a clearly-simulated fallback derived from price/volume.
+        const funding = ticker.fundingRate != null
+          ? ticker.fundingRate * 100
+          : (ticker.change >= 0 ? 1 : -1) * (0.005 + Math.abs(ticker.change) * 0.0009);
+        const oi = ticker.openInterest != null && ticker.openInterest > 0
+          ? ticker.openInterest * price
+          : ticker.volume * price * 0.12;
         const stats: { label: string; value: string; tone?: 'up' | 'down' }[] = [
           { label: 'Mark', value: usd(price, dp) },
           { label: 'Index', value: usd(indexPrice, dp) },

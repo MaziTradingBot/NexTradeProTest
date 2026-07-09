@@ -10,6 +10,8 @@ export interface Ticker {
   high: number;
   low: number;
   volume: number;
+  fundingRate?: number | null; // decimal per 8h (0.0001 = 0.01%); null if no perp
+  openInterest?: number | null; // base units; null if no perp
 }
 
 /**
