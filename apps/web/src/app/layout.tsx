@@ -4,6 +4,7 @@ import { SupportButton } from '@/components/SupportButton';
 import { WelcomeTour } from '@/components/WelcomeTour';
 import { MaintenanceGate } from '@/components/MaintenanceGate';
 import { ModeBadge } from '@/components/ModeBadge';
+import { MobileAppNav } from '@/components/MobileAppNav';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://nextradepro.vercel.app'),
@@ -33,6 +34,9 @@ export const viewport: Viewport = {
   themeColor: '#0A0E17',
   width: 'device-width',
   initialScale: 1,
+  // Let content extend into the notch / Dynamic Island / home-indicator region
+  // so our safe-area padding tokens (env(safe-area-inset-*)) take effect.
+  viewportFit: 'cover',
 };
 
 // Runs before paint to apply the saved theme and avoid a flash.
@@ -53,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen antialiased">
         <ModeBadge />
         <MaintenanceGate>{children}</MaintenanceGate>
+        <MobileAppNav />
         <SupportButton />
         <WelcomeTour />
       </body>

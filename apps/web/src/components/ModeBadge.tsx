@@ -15,7 +15,8 @@ export function ModeBadge() {
   return (
     <div
       className={cn(
-        'fixed bottom-4 left-4 z-[60] hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold backdrop-blur-md sm:flex',
+        // Sits above the mobile bottom nav on tablets; drops to the corner on desktop where the nav is gone.
+        'fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-4 z-[60] hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold backdrop-blur-md sm:flex lg:bottom-4',
         mode === 'DEMO' ? 'border-brand-emerald/30 bg-brand-emerald/10 text-brand-emerald' : 'border-brand-blue/30 bg-brand-blue/10 text-brand-blue',
       )}
     >

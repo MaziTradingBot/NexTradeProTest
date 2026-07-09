@@ -131,6 +131,66 @@ html.light .bg-black\/20 { background-color: rgba(2, 6, 23, 0.05) !important; }
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Mobile-first foundation — safe-area insets, dynamic viewport units, a shared
+   z-index scale and touch ergonomics. Exposed as design tokens + utility
+   classes so every page inherits consistent behaviour without per-page edits.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Notch / Dynamic Island / home-indicator insets (0 on non-inset devices). */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /* Height of the mobile bottom nav — pages pad content by this + safe area. */
+  --app-nav-h: 4rem;
+
+  /* Z-index scale — one source of truth for stacking order. */
+  --z-base: 0;
+  --z-sticky: 30;
+  --z-nav: 40;
+  --z-header: 50;
+  --z-drawer: 60;
+  --z-modal: 70;
+  --z-toast: 80;
+  --z-tooltip: 90;
+}
+
+/* Edge-aware padding helpers. */
+.safe-t { padding-top: var(--safe-top); }
+.safe-b { padding-bottom: var(--safe-bottom); }
+.safe-x { padding-left: var(--safe-left); padding-right: var(--safe-right); }
+
+/* Clears the mobile bottom nav + the iOS home indicator; no-op on desktop. */
+.pb-appnav { padding-bottom: calc(var(--app-nav-h) + var(--safe-bottom)); }
+@media (min-width: 1024px) {
+  .pb-appnav { padding-bottom: 0; }
+}
+/* The bottom-nav component toggles this on <body> while it is mounted so page
+   content always clears the bar regardless of which route rendered it. */
+body.has-appnav { padding-bottom: calc(var(--app-nav-h) + var(--safe-bottom)); }
+@media (min-width: 1024px) {
+  body.has-appnav { padding-bottom: 0; }
+}
+
+/* Dynamic viewport units — avoids the iOS Safari 100vh overflow bug. */
+.min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+.h-dvh { height: 100vh; height: 100dvh; }
+
+/* Hide scrollbars on horizontal chip / tab strips while keeping them scrollable. */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Fluid, clamp-based headings that scale smoothly from phone → desktop. */
+.fluid-h1 { font-size: clamp(1.9rem, 5vw + 0.5rem, 3.5rem); line-height: 1.05; letter-spacing: -0.02em; }
+.fluid-h2 { font-size: clamp(1.4rem, 3vw + 0.4rem, 2.25rem); line-height: 1.15; letter-spacing: -0.01em; }
+
+/* Touch ergonomics: remove the grey tap-flash on touch devices. */
+@media (hover: none) {
+  a, button, [role='button'] { -webkit-tap-highlight-color: transparent; }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 10px;
