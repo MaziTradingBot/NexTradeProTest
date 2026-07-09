@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { OrderBook } from '@/components/OrderBook';
 import { RecentTrades } from '@/components/RecentTrades';
@@ -74,6 +75,10 @@ function TradingTerminal() {
   const [wallets, setWallets] = useState<{ asset: string; balance: string }[]>([]);
   // Bottom workspace panel — tabbed like a pro terminal (Positions / Orders).
   const [bottomTab, setBottomTab] = useState<'POSITIONS' | 'ORDERS'>('POSITIONS');
+  // Collapsible left watchlist rail; the preference persists across sessions.
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  useEffect(() => { setRailCollapsed(localStorage.getItem('nxp-trade-rail') === '1'); }, []);
+  const toggleRail = () => setRailCollapsed((v) => { const n = !v; try { localStorage.setItem('nxp-trade-rail', n ? '1' : '0'); } catch { /* ignore */ } return n; });
 
   const loadWallets = () => {
     if (!user) return;
@@ -371,7 +376,48 @@ function TradingTerminal() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_240px_300px]">
+      <div className={cn('grid gap-4 lg:grid-cols-[1fr_240px_300px]', railCollapsed ? 'xl:grid-cols-[46px_1fr_240px_300px]' : 'xl:grid-cols-[210px_1fr_240px_300px]')}>
+        {/* Left rail: independent-scrolling market watchlist, collapsible with a
+            persisted preference (institutional wide layout, xl+ only). */}
+        <div className="hidden xl:block">
+          <div className="card sticky top-24 max-h-[calc(100dvh-7rem)] overflow-hidden p-0">
+            {railCollapsed ? (
+              <button onClick={toggleRail} className="flex w-full items-center justify-center py-3 text-slate-400 transition hover:text-white" title="Expand watchlist" aria-label="Expand watchlist">
+                <PanelLeftOpen size={18} />
+              </button>
+            ) : (
+              <>
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                  <span className="text-sm font-semibold text-white">Watchlist</span>
+                  <button onClick={toggleRail} className="text-slate-400 transition hover:text-white" title="Collapse watchlist" aria-label="Collapse watchlist">
+                    <PanelLeftClose size={16} />
+                  </button>
+                </div>
+                <div className="max-h-[calc(100dvh-11rem)] overflow-y-auto">
+                  {tickers.slice(0, 20).map((t) => (
+                    <button
+                      key={t.symbol}
+                      onClick={() => setSymbol(t.symbol)}
+                      aria-current={symbol === t.symbol ? 'true' : undefined}
+                      className={cn(
+                        'flex w-full items-center justify-between border-l-2 px-3 py-2 text-left text-xs transition hover:bg-white/5',
+                        symbol === t.symbol ? 'border-brand-blue bg-white/5' : 'border-transparent',
+                      )}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-white">{assetName(t.symbol)}<span className="text-slate-500">/USDT</span></span>
+                        <span className="font-mono text-[11px] text-slate-400">${t.price.toLocaleString(undefined, { maximumFractionDigits: t.price < 2 ? 4 : 2 })}</span>
+                      </span>
+                      <span className={cn('shrink-0 font-mono text-[11px] font-semibold', t.change >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{formatPercent(t.change)}</span>
+                    </button>
+                  ))}
+                  {tickers.length === 0 && <div className="px-4 py-6 text-center text-xs text-slate-500">Loading markets…</div>}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
         {/* Chart */}
         <div className="card p-4">
           <div className="mb-3 flex items-center gap-2">
