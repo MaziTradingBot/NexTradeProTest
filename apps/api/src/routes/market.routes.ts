@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { subscribeOrderBook } from '../lib/orderbookStream';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -225,6 +226,28 @@ router.get('/orderbook', async (req, res) => {
   } catch {
     res.json({ bids: [], asks: [] }); // client shows a simulated book
   }
+});
+
+// GET /api/market/orderbook/stream?symbol=BTCUSDT — live L2 depth over SSE. The
+// backend relays an exchange websocket (see lib/orderbookStream); the client
+// falls back to the REST snapshot / simulated book when no events arrive.
+router.get('/orderbook/stream', (req, res) => {
+  const symbol = ((req.query.symbol as string) || 'BTCUSDT').toUpperCase();
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no', // disable proxy buffering (nginx/Render)
+  });
+  res.write(`event: ready\ndata: {}\n\n`);
+  const unsubscribe = subscribeOrderBook(symbol, res);
+  const ping = setInterval(() => {
+    try { res.write(`: ping\n\n`); } catch { /* gone */ }
+  }, 20000);
+  req.on('close', () => {
+    clearInterval(ping);
+    unsubscribe();
+  });
 });
 
 // GET /api/market/trades?symbol=BTCUSDT — recent trades (backend proxies exchange).
