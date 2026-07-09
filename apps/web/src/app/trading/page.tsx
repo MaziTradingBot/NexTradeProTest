@@ -273,6 +273,35 @@ function TradingTerminal() {
         </span>
       </div>
 
+      {/* Market-data strip — live 24h stats plus derived (simulated) perp
+          metrics, scrollable on small screens. */}
+      {ticker && (() => {
+        const dp = price < 2 ? 4 : 2;
+        const compact = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n.toFixed(0));
+        const indexPrice = price * (1 + Math.sin(price * 0.001) * 0.0003);
+        const funding = (ticker.change >= 0 ? 1 : -1) * (0.005 + Math.abs(ticker.change) * 0.0009);
+        const oi = ticker.volume * price * 0.12;
+        const stats: { label: string; value: string; tone?: 'up' | 'down' }[] = [
+          { label: 'Mark', value: usd(price, dp) },
+          { label: 'Index', value: usd(indexPrice, dp) },
+          { label: 'Funding / 8h', value: `${funding >= 0 ? '+' : ''}${funding.toFixed(4)}%`, tone: funding >= 0 ? 'up' : 'down' },
+          { label: 'Open Interest', value: `$${compact(oi)}` },
+          { label: '24h High', value: usd(ticker.high, dp) },
+          { label: '24h Low', value: usd(ticker.low, dp) },
+          { label: '24h Vol', value: compact(ticker.volume) },
+        ];
+        return (
+          <div className="no-scrollbar mb-4 flex items-stretch gap-6 overflow-x-auto rounded-xl border border-white/10 bg-bg-surface/60 px-4 py-2.5">
+            {stats.map((s) => (
+              <div key={s.label} className="shrink-0">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">{s.label}</div>
+                <div className={cn('font-mono text-sm font-semibold', s.tone === 'up' ? 'text-brand-emerald' : s.tone === 'down' ? 'text-red-400' : 'text-white')}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {copyFrom && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/10 px-4 py-3 text-sm text-ink-soft">
           <span className="mt-0.5">📋</span>

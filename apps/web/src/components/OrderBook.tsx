@@ -18,7 +18,7 @@ function useSimBook(price: number, live: boolean) {
     const rng = (n: number) => (Math.sin(seed * 13.7 + n * 7.3) + 1) / 2;
     const step = price * 0.0004;
     const rows = (dir: 1 | -1) =>
-      Array.from({ length: 10 }).map((_, i) => ({
+      Array.from({ length: 20 }).map((_, i) => ({
         price: price + dir * step * (i + 1),
         size: +(0.05 + rng(i + (dir === 1 ? 0 : 50)) * 2.4).toFixed(3),
       }));
@@ -40,9 +40,9 @@ export function OrderBook({ price, symbol }: { price: number; symbol: string }) 
   const { bids: liveBids, asks: liveAsks, live } = useOrderBook(symbol);
   const sim = useSimBook(price, live);
 
-  // Best-first slices, then cumulative depth for the heatmap.
-  const rawAsks = (live && liveAsks.length ? liveAsks : sim.asks).slice(0, 10); // ascending from best ask
-  const rawBids = (live && liveBids.length ? liveBids : sim.bids).slice(0, 10); // descending from best bid
+  // Best-first slices (up to 14 levels a side), then cumulative depth.
+  const rawAsks = (live && liveAsks.length ? liveAsks : sim.asks).slice(0, 14); // ascending from best ask
+  const rawBids = (live && liveBids.length ? liveBids : sim.bids).slice(0, 14); // descending from best bid
   const asksC = withCum(rawAsks);
   const bidsC = withCum(rawBids);
   const maxCum = Math.max(asksC.at(-1)?.cum ?? 1, bidsC.at(-1)?.cum ?? 1, 1);
@@ -85,7 +85,30 @@ export function OrderBook({ price, symbol }: { price: number; symbol: string }) 
         <span className="font-mono text-sm font-semibold text-white">${price ? price.toLocaleString(undefined, { maximumFractionDigits: dp }) : '—'}</span>
         <span className="text-[10px] font-normal text-slate-500">spread {spread.toFixed(dp)} ({spreadPct.toFixed(3)}%)</span>
       </div>
-      <div className="pb-2">{bids.map((r, i) => <Row key={`b${i}`} r={r} side="bid" />)}</div>
+      <div className="pb-1">{bids.map((r, i) => <Row key={`b${i}`} r={r} side="bid" />)}</div>
+
+      {/* Cumulative market-depth chart (bids left, asks right, mid-centred) */}
+      {asksC.length > 1 && bidsC.length > 1 && (
+        <div className="border-t border-white/5 px-2 pb-2 pt-1.5">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-14 w-full" aria-hidden>
+            {(() => {
+              const bidPts = bidsC
+                .map((l, i) => [50 * (1 - i / Math.max(1, bidsC.length - 1)), 100 * (1 - l.cum / maxCum)] as const)
+                .reverse();
+              const askPts = asksC.map((l, i) => [50 + 50 * (i / Math.max(1, asksC.length - 1)), 100 * (1 - l.cum / maxCum)] as const);
+              const s = (pts: readonly (readonly [number, number])[]) => pts.map((p) => `${p[0]},${p[1]}`).join(' ');
+              return (
+                <>
+                  <polygon points={`0,100 ${s(bidPts)} 50,100`} fill="rgba(52,211,153,0.14)" />
+                  <polyline points={s(bidPts)} fill="none" stroke="#34D399" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                  <polygon points={`50,100 ${s(askPts)} 100,100`} fill="rgba(248,113,113,0.14)" />
+                  <polyline points={s(askPts)} fill="none" stroke="#F87171" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                </>
+              );
+            })()}
+          </svg>
+        </div>
+      )}
     </div>
   );
 }
