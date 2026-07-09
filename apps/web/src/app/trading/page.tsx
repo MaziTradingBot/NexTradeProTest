@@ -72,6 +72,8 @@ function TradingTerminal() {
   const [msg, setMsg] = useState<string | null>(null);
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
   const [wallets, setWallets] = useState<{ asset: string; balance: string }[]>([]);
+  // Bottom workspace panel — tabbed like a pro terminal (Positions / Orders).
+  const [bottomTab, setBottomTab] = useState<'POSITIONS' | 'ORDERS'>('POSITIONS');
 
   const loadWallets = () => {
     if (!user) return;
@@ -662,14 +664,17 @@ function TradingTerminal() {
         </div>
       </div>
 
-      {/* Open positions */}
-      {user && summary && (
+      {/* Bottom workspace — tabbed Positions / Orders (pro-terminal style) */}
+      {user && (
         <div className="card mt-4 p-0">
-          <div className="flex items-center gap-2 border-b border-white/10 px-5 py-3">
-            <span className="text-sm font-semibold text-white">Open Positions</span>
-            <span className="badge bg-white/5 text-slate-400">{summary.positions.length}</span>
+          <div className="flex items-center gap-1 border-b border-white/10 px-3 py-2">
+            {([['POSITIONS', 'Positions', summary?.positions.length ?? 0], ['ORDERS', 'Orders', openOrders.filter((o) => o.status === 'OPEN').length]] as const).map(([k, l, n]) => (
+              <button key={k} onClick={() => setBottomTab(k)} className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition', bottomTab === k ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white')}>
+                {l}<span className="badge bg-white/5 text-slate-400">{n}</span>
+              </button>
+            ))}
           </div>
-          {summary.positions.length === 0 ? (
+          {bottomTab === 'POSITIONS' && (!summary || summary.positions.length === 0 ? (
             <p className="px-5 py-6 text-sm text-slate-500">No open positions. Place a market order to open one.</p>
           ) : (
             <>
@@ -752,16 +757,9 @@ function TradingTerminal() {
                 })}
               </div>
             </>
-          )}
-        </div>
-      )}
-
-      {/* Open orders (pending limit / stop) */}
-      {user && openOrders.filter((o) => o.status === 'OPEN').length > 0 && (
-        <div className="card mt-4 p-0">
-          <div className="border-b border-white/10 px-5 py-3 text-sm font-semibold text-white">Working Orders</div>
-          {openOrders.filter((o) => o.status === 'OPEN').length === 0 ? (
-            <p className="px-5 py-6 text-sm text-slate-500">No open orders.</p>
+          ))}
+          {bottomTab === 'ORDERS' && (openOrders.filter((o) => o.status === 'OPEN').length === 0 ? (
+            <p className="px-5 py-6 text-sm text-slate-500">No working orders. Limit and stop orders will appear here.</p>
           ) : (
             <>
               {/* Tablet / desktop table */}
@@ -816,7 +814,7 @@ function TradingTerminal() {
                   ))}
               </div>
             </>
-          )}
+          ))}
         </div>
       )}
       <div className="h-16" />
