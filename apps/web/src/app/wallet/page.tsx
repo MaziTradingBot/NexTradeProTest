@@ -37,6 +37,11 @@ function WalletInner() {
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const [txns, setTxns] = useState<TxRow[]>([]);
   const [tab, setTab] = useState<Tab>('DEPOSIT');
+  // Honour a ?tab= deep-link (e.g. from the header Deposit/Withdraw quick actions).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')?.toUpperCase();
+    if (t && TABS.some((x) => x.key === t)) setTab(t as Tab);
+  }, []);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAWAL'>('ALL');
 

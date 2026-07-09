@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Menu, X, ChevronDown } from 'lucide-react';
+import { Menu, X, ChevronDown, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationBell } from './NotificationBell';
 import { GlobalSearch } from './GlobalSearch';
 import { ModeSwitcher } from './ModeSwitcher';
 import { UserMenu } from './UserMenu';
+import { HeaderWallet } from './HeaderWallet';
 import { useAuth } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
@@ -40,7 +41,10 @@ export function Navbar() {
   useEffect(() => { setOpen(false); }, [pathname]);
 
   return (
-    <header className={cn('fixed inset-x-0 top-0 z-50 transition-all duration-300', scrolled ? 'glass shadow-card' : 'bg-transparent')}>
+    <header
+      className={cn('fixed inset-x-0 top-0 z-50 transition-all duration-300', scrolled ? 'glass shadow-card' : 'bg-transparent')}
+      style={{ paddingTop: 'var(--safe-top)' }}
+    >
       <nav className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
         <Link href="/" aria-label="NexTradePro home" className="shrink-0"><Logo /></Link>
 
@@ -59,6 +63,7 @@ export function Navbar() {
           <ThemeToggle />
           {user ? (
             <>
+              <HeaderWallet />
               <div className="hidden sm:block"><ModeSwitcher compact /></div>
               <NotificationBell />
               <UserMenu />
@@ -86,6 +91,16 @@ export function Navbar() {
                 {l.label}
               </Link>
             ))}
+            {user && (
+              <div className="grid grid-cols-2 gap-2 pt-3">
+                <Link href="/wallet?tab=DEPOSIT" className="btn-primary" onClick={() => setOpen(false)}>
+                  <ArrowDownToLine size={16} /> Deposit
+                </Link>
+                <Link href="/wallet?tab=WITHDRAW" className="btn-ghost" onClick={() => setOpen(false)}>
+                  <ArrowUpFromLine size={16} /> Withdraw
+                </Link>
+              </div>
+            )}
             {!user && (
               <div className="flex flex-col gap-2 pt-3">
                 <Link href="/login" className="btn-ghost" onClick={() => setOpen(false)}>Login</Link>

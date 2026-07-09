@@ -140,58 +140,118 @@ function HistoryInner() {
         )}
       </div>
 
-      {/* Table */}
-      <div className="card mt-4 overflow-x-auto p-0">
-        {tab === 'TX' ? (
-          <table className="w-full text-sm">
-            <thead className="border-b border-white/10 text-left text-xs uppercase text-ink-muted">
-              <tr><th className="px-4 py-3">Type</th><th className="px-4 py-3">Asset</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Reference</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Date</th><th className="px-4 py-3 text-right">Receipt</th></tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {(paged as Txn[]).map((t) => (
-                <tr key={t.id}>
-                  <td className="px-4 py-3 font-medium text-white">{t.type.replace('_', ' ')}</td>
-                  <td className="px-4 py-3 text-ink-soft">{t.asset}</td>
-                  <td className="px-4 py-3 text-right font-mono text-white">{fmt(t.amount)}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-ink-muted">{t.reference ?? '—'}</td>
-                  <td className="px-4 py-3"><span className={cn('badge', statusTone(t.status))}>{t.status}</span></td>
-                  <td className="px-4 py-3 text-ink-muted">{new Date(t.createdAt).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => downloadReceipt(t, user?.fullName ?? '')} className="btn-ghost px-2.5 py-1.5 text-xs"><ReceiptIcon size={13} /> PDF</button>
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-ink-muted">No transactions match your filters.</td></tr>}
-            </tbody>
-          </table>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-white/10 text-left text-xs uppercase text-ink-muted">
-              <tr><th className="px-4 py-3">Pair</th><th className="px-4 py-3">Side</th><th className="px-4 py-3">Type</th><th className="px-4 py-3 text-right">Entry</th><th className="px-4 py-3 text-right">Exit</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Lev</th><th className="px-4 py-3 text-right">P/L</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Duration</th></tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {(paged as Order[]).map((o) => {
-                const pnl = o.realizedPnl != null ? Number(o.realizedPnl) : null;
-                return (
-                  <tr key={o.id}>
-                    <td className="px-4 py-3 font-medium text-white">{o.symbol}</td>
-                    <td className={cn('px-4 py-3 font-semibold', o.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{o.side === 'BUY' ? 'Long' : 'Short'}</td>
-                    <td className="px-4 py-3 text-ink-muted">{o.type.replace('_', ' ')}</td>
-                    <td className="px-4 py-3 text-right font-mono text-ink-soft">{fmt(o.price)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-ink-soft">{fmt(o.closePrice)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-ink-soft">{fmt(o.amount)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-ink-muted">{o.leverage}x</td>
-                    <td className={cn('px-4 py-3 text-right font-mono font-semibold', pnl == null ? 'text-ink-muted' : pnl >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${fmt(pnl)}`}</td>
-                    <td className="px-4 py-3"><span className={cn('badge', statusTone(o.status))}>{o.status}</span></td>
-                    <td className="px-4 py-3 text-right text-ink-muted">{dur(o.createdAt, o.closedAt)}</td>
+      {/* Data — full tables on tablet/desktop, stacked cards on phones (no
+          horizontal scrolling). */}
+      {tab === 'TX' ? (
+        <>
+          {/* Desktop / tablet table */}
+          <div className="card mt-4 hidden overflow-x-auto p-0 md:block">
+            <table className="w-full text-sm">
+              <thead className="border-b border-white/10 text-left text-xs uppercase text-ink-muted">
+                <tr><th className="px-4 py-3">Type</th><th className="px-4 py-3">Asset</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Reference</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Date</th><th className="px-4 py-3 text-right">Receipt</th></tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {(paged as Txn[]).map((t) => (
+                  <tr key={t.id}>
+                    <td className="px-4 py-3 font-medium text-white">{t.type.replace('_', ' ')}</td>
+                    <td className="px-4 py-3 text-ink-soft">{t.asset}</td>
+                    <td className="px-4 py-3 text-right font-mono text-white">{fmt(t.amount)}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink-muted">{t.reference ?? '—'}</td>
+                    <td className="px-4 py-3"><span className={cn('badge', statusTone(t.status))}>{t.status}</span></td>
+                    <td className="px-4 py-3 text-ink-muted">{new Date(t.createdAt).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => downloadReceipt(t, user?.fullName ?? '')} className="btn-ghost px-2.5 py-1.5 text-xs"><ReceiptIcon size={13} /> PDF</button>
+                    </td>
                   </tr>
-                );
-              })}
-              {rows.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-ink-muted">No trades match your filters.</td></tr>}
-            </tbody>
-          </table>
-        )}
-      </div>
+                ))}
+                {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-ink-muted">No transactions match your filters.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {/* Phone cards */}
+          <div className="mt-4 space-y-2 md:hidden">
+            {(paged as Txn[]).map((t) => (
+              <div key={t.id} className="card p-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-white">{t.type.replace('_', ' ')}</span>
+                  <span className={cn('badge', statusTone(t.status))}>{t.status}</span>
+                </div>
+                <div className="mt-2 flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs text-ink-muted">{t.asset}</div>
+                    {t.reference && <div className="mt-0.5 truncate font-mono text-[11px] text-ink-faint">{t.reference}</div>}
+                  </div>
+                  <div className="shrink-0 font-mono font-semibold text-white">{fmt(t.amount)} <span className="text-xs font-normal text-ink-muted">{t.asset}</span></div>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2.5">
+                  <span className="text-xs text-ink-muted">{new Date(t.createdAt).toLocaleString()}</span>
+                  <button onClick={() => downloadReceipt(t, user?.fullName ?? '')} className="btn-ghost px-2.5 py-1 text-xs"><ReceiptIcon size={12} /> PDF</button>
+                </div>
+              </div>
+            ))}
+            {rows.length === 0 && <div className="card py-10 text-center text-ink-muted">No transactions match your filters.</div>}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Desktop / tablet table */}
+          <div className="card mt-4 hidden overflow-x-auto p-0 md:block">
+            <table className="w-full text-sm">
+              <thead className="border-b border-white/10 text-left text-xs uppercase text-ink-muted">
+                <tr><th className="px-4 py-3">Pair</th><th className="px-4 py-3">Side</th><th className="px-4 py-3">Type</th><th className="px-4 py-3 text-right">Entry</th><th className="px-4 py-3 text-right">Exit</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Lev</th><th className="px-4 py-3 text-right">P/L</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Duration</th></tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {(paged as Order[]).map((o) => {
+                  const pnl = o.realizedPnl != null ? Number(o.realizedPnl) : null;
+                  return (
+                    <tr key={o.id}>
+                      <td className="px-4 py-3 font-medium text-white">{o.symbol}</td>
+                      <td className={cn('px-4 py-3 font-semibold', o.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{o.side === 'BUY' ? 'Long' : 'Short'}</td>
+                      <td className="px-4 py-3 text-ink-muted">{o.type.replace('_', ' ')}</td>
+                      <td className="px-4 py-3 text-right font-mono text-ink-soft">{fmt(o.price)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-ink-soft">{fmt(o.closePrice)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-ink-soft">{fmt(o.amount)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-ink-muted">{o.leverage}x</td>
+                      <td className={cn('px-4 py-3 text-right font-mono font-semibold', pnl == null ? 'text-ink-muted' : pnl >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${fmt(pnl)}`}</td>
+                      <td className="px-4 py-3"><span className={cn('badge', statusTone(o.status))}>{o.status}</span></td>
+                      <td className="px-4 py-3 text-right text-ink-muted">{dur(o.createdAt, o.closedAt)}</td>
+                    </tr>
+                  );
+                })}
+                {rows.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-ink-muted">No trades match your filters.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {/* Phone cards */}
+          <div className="mt-4 space-y-2 md:hidden">
+            {(paged as Order[]).map((o) => {
+              const pnl = o.realizedPnl != null ? Number(o.realizedPnl) : null;
+              return (
+                <div key={o.id} className="card p-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="font-semibold text-white">{o.symbol}</span>
+                      <span className={cn('text-xs font-semibold', o.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{o.side === 'BUY' ? 'Long' : 'Short'}</span>
+                      <span className="text-[11px] text-ink-muted">{o.leverage}x</span>
+                    </span>
+                    <span className={cn('badge', statusTone(o.status))}>{o.status}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div><div className="text-ink-muted">Entry</div><div className="font-mono text-ink-soft">{fmt(o.price)}</div></div>
+                    <div><div className="text-ink-muted">Exit</div><div className="font-mono text-ink-soft">{fmt(o.closePrice)}</div></div>
+                    <div><div className="text-ink-muted">Qty</div><div className="font-mono text-ink-soft">{fmt(o.amount)}</div></div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2.5">
+                    <span className="text-xs text-ink-muted">{o.type.replace('_', ' ')} · {dur(o.createdAt, o.closedAt)}</span>
+                    <span className={cn('font-mono font-semibold', pnl == null ? 'text-ink-muted' : pnl >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${fmt(pnl)}`}</span>
+                  </div>
+                </div>
+              );
+            })}
+            {rows.length === 0 && <div className="card py-10 text-center text-ink-muted">No trades match your filters.</div>}
+          </div>
+        </>
+      )}
 
       {/* Pagination */}
       {pages > 1 && (
