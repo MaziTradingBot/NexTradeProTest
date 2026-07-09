@@ -672,54 +672,86 @@ function TradingTerminal() {
           {summary.positions.length === 0 ? (
             <p className="px-5 py-6 text-sm text-slate-500">No open positions. Place a market order to open one.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="px-5 py-2">Pair</th>
-                    <th className="px-5 py-2">Side</th>
-                    <th className="px-5 py-2 text-right">Size</th>
-                    <th className="px-5 py-2 text-right">Entry</th>
-                    <th className="px-5 py-2 text-right">Mark</th>
-                    <th className="px-5 py-2 text-right">Margin</th>
-                    <th className="px-5 py-2 text-right">P/L</th>
-                    <th className="px-5 py-2 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {summary.positions.map((p: Position) => {
-                    const mark = priceOf(p.symbol) || p.markPrice || p.entryPrice;
-                    const pnl = positionPnl(p, mark);
-                    const pnlPct = p.margin > 0 ? (pnl / p.margin) * 100 : 0;
-                    return (
-                      <tr key={p.id}>
-                        <td className="px-5 py-2.5 font-medium text-white">
-                          {assetName(p.symbol)}/USDT
-                          {p.leverage > 1 && <span className="ml-1.5 text-[11px] text-brand-gold">{p.leverage}x</span>}
-                        </td>
-                        <td className={cn('px-5 py-2.5 font-semibold', p.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>
-                          {p.side === 'BUY' ? 'Long' : 'Short'}
-                        </td>
-                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">{p.amount}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">{usd(p.entryPrice, p.entryPrice < 2 ? 4 : 2)}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">{usd(mark, mark < 2 ? 4 : 2)}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-slate-400">{usd(p.margin)}</td>
-                        <td className={cn('px-5 py-2.5 text-right font-mono font-semibold', pnl >= 0 ? 'text-brand-emerald' : 'text-red-400')}>
-                          {pnl >= 0 ? '+' : ''}
-                          {usd(pnl)}
-                          <span className="ml-1 text-[11px] opacity-70">({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)</span>
-                        </td>
-                        <td className="px-5 py-2.5 text-right">
-                          <button onClick={() => closePosition(p.id)} className="rounded-lg bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20">
-                            Close
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Tablet / desktop table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="px-5 py-2">Pair</th>
+                      <th className="px-5 py-2">Side</th>
+                      <th className="px-5 py-2 text-right">Size</th>
+                      <th className="px-5 py-2 text-right">Entry</th>
+                      <th className="px-5 py-2 text-right">Mark</th>
+                      <th className="px-5 py-2 text-right">Margin</th>
+                      <th className="px-5 py-2 text-right">P/L</th>
+                      <th className="px-5 py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {summary.positions.map((p: Position) => {
+                      const mark = priceOf(p.symbol) || p.markPrice || p.entryPrice;
+                      const pnl = positionPnl(p, mark);
+                      const pnlPct = p.margin > 0 ? (pnl / p.margin) * 100 : 0;
+                      return (
+                        <tr key={p.id}>
+                          <td className="px-5 py-2.5 font-medium text-white">
+                            {assetName(p.symbol)}/USDT
+                            {p.leverage > 1 && <span className="ml-1.5 text-[11px] text-brand-gold">{p.leverage}x</span>}
+                          </td>
+                          <td className={cn('px-5 py-2.5 font-semibold', p.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>
+                            {p.side === 'BUY' ? 'Long' : 'Short'}
+                          </td>
+                          <td className="px-5 py-2.5 text-right font-mono text-slate-300">{p.amount}</td>
+                          <td className="px-5 py-2.5 text-right font-mono text-slate-300">{usd(p.entryPrice, p.entryPrice < 2 ? 4 : 2)}</td>
+                          <td className="px-5 py-2.5 text-right font-mono text-slate-300">{usd(mark, mark < 2 ? 4 : 2)}</td>
+                          <td className="px-5 py-2.5 text-right font-mono text-slate-400">{usd(p.margin)}</td>
+                          <td className={cn('px-5 py-2.5 text-right font-mono font-semibold', pnl >= 0 ? 'text-brand-emerald' : 'text-red-400')}>
+                            {pnl >= 0 ? '+' : ''}
+                            {usd(pnl)}
+                            <span className="ml-1 text-[11px] opacity-70">({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)</span>
+                          </td>
+                          <td className="px-5 py-2.5 text-right">
+                            <button onClick={() => closePosition(p.id)} className="rounded-lg bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20">
+                              Close
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {/* Phone cards */}
+              <div className="space-y-2 p-3 md:hidden">
+                {summary.positions.map((p: Position) => {
+                  const mark = priceOf(p.symbol) || p.markPrice || p.entryPrice;
+                  const pnl = positionPnl(p, mark);
+                  const pnlPct = p.margin > 0 ? (pnl / p.margin) * 100 : 0;
+                  return (
+                    <div key={p.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="font-semibold text-white">{assetName(p.symbol)}/USDT</span>
+                          <span className={cn('text-xs font-semibold', p.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{p.side === 'BUY' ? 'Long' : 'Short'}</span>
+                          {p.leverage > 1 && <span className="text-[11px] text-brand-gold">{p.leverage}x</span>}
+                        </span>
+                        <button onClick={() => closePosition(p.id)} className="shrink-0 rounded-lg bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20">Close</button>
+                      </div>
+                      <div className="mt-2.5 grid grid-cols-3 gap-2 text-xs">
+                        <div><div className="text-slate-500">Size</div><div className="font-mono text-slate-300">{p.amount}</div></div>
+                        <div><div className="text-slate-500">Entry</div><div className="font-mono text-slate-300">{usd(p.entryPrice, p.entryPrice < 2 ? 4 : 2)}</div></div>
+                        <div><div className="text-slate-500">Mark</div><div className="font-mono text-slate-300">{usd(mark, mark < 2 ? 4 : 2)}</div></div>
+                      </div>
+                      <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-2.5">
+                        <span className="text-xs text-slate-500">Margin {usd(p.margin)}</span>
+                        <span className={cn('font-mono text-sm font-semibold', pnl >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{pnl >= 0 ? '+' : ''}{usd(pnl)} <span className="text-[11px] opacity-70">({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)</span></span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -731,38 +763,59 @@ function TradingTerminal() {
           {openOrders.filter((o) => o.status === 'OPEN').length === 0 ? (
             <p className="px-5 py-6 text-sm text-slate-500">No open orders.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="px-5 py-2">Pair</th>
-                    <th className="px-5 py-2">Side</th>
-                    <th className="px-5 py-2">Type</th>
-                    <th className="px-5 py-2 text-right">Price</th>
-                    <th className="px-5 py-2 text-right">Amount</th>
-                    <th className="px-5 py-2 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {openOrders
-                    .filter((o) => o.status === 'OPEN')
-                    .map((o) => (
-                      <tr key={o.id}>
-                        <td className="px-5 py-2.5 font-medium text-white">{o.symbol}</td>
-                        <td className={cn('px-5 py-2.5', o.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{o.side}</td>
-                        <td className="px-5 py-2.5 text-slate-400">{o.type}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">${parseFloat(o.price).toLocaleString()}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-slate-300">{parseFloat(o.amount)}</td>
-                        <td className="px-5 py-2.5 text-right">
-                          <button onClick={() => cancelOrder(o.id)} className="rounded-lg bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/25">
-                            Cancel
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Tablet / desktop table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="px-5 py-2">Pair</th>
+                      <th className="px-5 py-2">Side</th>
+                      <th className="px-5 py-2">Type</th>
+                      <th className="px-5 py-2 text-right">Price</th>
+                      <th className="px-5 py-2 text-right">Amount</th>
+                      <th className="px-5 py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {openOrders
+                      .filter((o) => o.status === 'OPEN')
+                      .map((o) => (
+                        <tr key={o.id}>
+                          <td className="px-5 py-2.5 font-medium text-white">{o.symbol}</td>
+                          <td className={cn('px-5 py-2.5', o.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{o.side}</td>
+                          <td className="px-5 py-2.5 text-slate-400">{o.type}</td>
+                          <td className="px-5 py-2.5 text-right font-mono text-slate-300">${parseFloat(o.price).toLocaleString()}</td>
+                          <td className="px-5 py-2.5 text-right font-mono text-slate-300">{parseFloat(o.amount)}</td>
+                          <td className="px-5 py-2.5 text-right">
+                            <button onClick={() => cancelOrder(o.id)} className="rounded-lg bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/25">
+                              Cancel
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Phone cards */}
+              <div className="space-y-2 p-3 md:hidden">
+                {openOrders
+                  .filter((o) => o.status === 'OPEN')
+                  .map((o) => (
+                    <div key={o.id} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white">{o.symbol}</span>
+                          <span className={cn('text-xs font-semibold', o.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{o.side}</span>
+                          <span className="text-[11px] text-slate-500">{o.type}</span>
+                        </div>
+                        <div className="mt-1 font-mono text-xs text-slate-300">${parseFloat(o.price).toLocaleString()} · {parseFloat(o.amount)}</div>
+                      </div>
+                      <button onClick={() => cancelOrder(o.id)} className="shrink-0 rounded-lg bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/25">Cancel</button>
+                    </div>
+                  ))}
+              </div>
+            </>
           )}
         </div>
       )}
