@@ -19,6 +19,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useMode } from '@/lib/useMode';
 import { useTickers, assetName } from '@/lib/useTickers';
+import { usePanelLayout } from '@/lib/usePanelLayout';
 import { useTradingAccount, liveMetrics, positionPnl, type Position } from '@/lib/useTradingAccount';
 import { useLiveSync } from '@/lib/useLiveSync';
 import { formatPercent, cn } from '@/lib/utils';
@@ -79,6 +80,8 @@ function TradingTerminal() {
   const [railCollapsed, setRailCollapsed] = useState(false);
   useEffect(() => { setRailCollapsed(localStorage.getItem('nxp-trade-rail') === '1'); }, []);
   const toggleRail = () => setRailCollapsed((v) => { const n = !v; try { localStorage.setItem('nxp-trade-rail', n ? '1' : '0'); } catch { /* ignore */ } return n; });
+  // Drag-resizable panel widths (persisted). Chart is the flexible 1fr column.
+  const { widths, isXl, startResize, reset: resetLayout } = usePanelLayout();
 
   const loadWallets = () => {
     if (!user) return;
@@ -376,10 +379,15 @@ function TradingTerminal() {
         </div>
       )}
 
-      <div className={cn('grid gap-4 lg:grid-cols-[1fr_240px_300px]', railCollapsed ? 'xl:grid-cols-[46px_1fr_240px_300px]' : 'xl:grid-cols-[210px_1fr_240px_300px]')}>
+      <div
+        className={cn('grid gap-4 lg:grid-cols-[1fr_240px_300px]', !isXl && (railCollapsed ? 'xl:grid-cols-[46px_1fr_240px_300px]' : 'xl:grid-cols-[210px_1fr_240px_300px]'))}
+        style={isXl ? { gridTemplateColumns: `${railCollapsed ? 46 : widths.rail}px minmax(0,1fr) ${widths.book}px ${widths.entry}px` } : undefined}
+      >
         {/* Left rail: independent-scrolling market watchlist, collapsible with a
-            persisted preference (institutional wide layout, xl+ only). */}
-        <div className="hidden xl:block">
+            persisted preference (institutional wide layout, xl+ only). Drag the
+            grip on its right edge to resize; double-click any grip to reset. */}
+        <div className="relative hidden xl:block">
+          {!railCollapsed && <ResizeHandle side="right" onPointerDown={startResize('rail', 1)} onDoubleClick={resetLayout} />}
           <div className="card sticky top-24 max-h-[calc(100dvh-7rem)] overflow-hidden p-0">
             {railCollapsed ? (
               <button onClick={toggleRail} className="flex w-full items-center justify-center py-3 text-slate-400 transition hover:text-white" title="Expand watchlist" aria-label="Expand watchlist">
@@ -463,13 +471,15 @@ function TradingTerminal() {
         </div>
 
         {/* Order book + recent trades */}
-        <div className="space-y-4">
+        <div className="relative space-y-4">
+          <ResizeHandle side="left" onPointerDown={startResize('book', -1)} onDoubleClick={resetLayout} />
           <OrderBook price={price} symbol={symbol} />
           <RecentTrades price={price} symbol={symbol} />
         </div>
 
         {/* Right column: pair selector + order ticket */}
-        <div className="space-y-4">
+        <div className="relative space-y-4">
+          <ResizeHandle side="left" onPointerDown={startResize('entry', -1)} onDoubleClick={resetLayout} />
         {/* Pair selector */}
         <div className="card p-0">
           <div className="border-b border-white/10 px-4 py-3">
@@ -865,6 +875,22 @@ function TradingTerminal() {
       )}
       <div className="h-16" />
     </section>
+  );
+}
+
+// A vertical splitter grip that sits in the gutter between two panels (xl only).
+function ResizeHandle({ onPointerDown, onDoubleClick, side }: { onPointerDown: (e: React.PointerEvent) => void; onDoubleClick?: () => void; side: 'left' | 'right' }) {
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize panel"
+      className={cn('group absolute top-0 z-30 hidden h-full w-3 cursor-col-resize touch-none items-center justify-center xl:flex', side === 'right' ? '-right-3.5' : '-left-3.5')}
+    >
+      <span className="h-10 w-1 rounded-full bg-white/10 transition-colors group-hover:bg-brand-blue/70" />
+    </div>
   );
 }
 
