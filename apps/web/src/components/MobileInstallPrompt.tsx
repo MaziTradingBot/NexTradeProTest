@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Download, X, Share, Plus, Smartphone } from 'lucide-react';
 
 // Re-prompt cadence: surface the install popup every 10 minutes on phones.
@@ -41,6 +42,8 @@ function isIOS() {
  * installed / running standalone, and re-surfaces every 10 minutes otherwise.
  */
 export function MobileInstallPrompt() {
+  const pathname = usePathname();
+  const onLanding = pathname === '/';
   const [open, setOpen] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [showIosHelp, setShowIosHelp] = useState(false);
@@ -66,7 +69,12 @@ export function MobileInstallPrompt() {
   }, []);
 
   // Schedule the first prompt, then re-prompt on a 10-minute cadence.
+  // Only the public landing page ('/') surfaces this popup.
   useEffect(() => {
+    if (!onLanding) {
+      setOpen(false);
+      return;
+    }
     if (installed || !isMobileViewport() || isStandalone()) return;
 
     const showNow = () => {
@@ -101,7 +109,7 @@ export function MobileInstallPrompt() {
       clearTimeout(first);
       if (interval) clearInterval(interval);
     };
-  }, [installed]);
+  }, [installed, onLanding]);
 
   const dismiss = () => {
     setOpen(false);
