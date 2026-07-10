@@ -241,8 +241,10 @@ function TradingTerminal() {
   return (
     <section className="mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
       {/* Consolidated symbol + market-data header — pair dropdown, live price and
-          the key 24h / perp stats in a single clean row. */}
-      <div className="card mb-4 p-4">
+          the key 24h / perp stats in a single clean row. Raised above the sibling
+          cards so the pair dropdown overlays them (they create their own
+          backdrop-blur stacking contexts). */}
+      <div className="card relative z-30 mb-4 p-4">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <PairPicker symbol={symbol} tickers={tickers} onSelect={setSymbol} />
           <div>
