@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Wallet, ArrowDownToLine, ListOrderedIcon, Shield } from 'lucide-react';
+import { Wallet, ArrowDownToLine, ListOrderedIcon, Shield, ChevronRight } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { ModeSwitcher } from '@/components/ModeSwitcher';
@@ -105,31 +105,11 @@ function DashboardInner() {
             ))}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/wallet" className="btn-ghost">
-            Deposit
+        {user?.isAdmin && (
+          <Link href="/admin" className="btn-primary">
+            Open Admin Panel
           </Link>
-          <Link href="/wallet" className="btn-ghost">
-            Wallet
-          </Link>
-          <Link href="/portfolio" className="btn-ghost">
-            Portfolio
-          </Link>
-          <Link href="/referral" className="btn-ghost">
-            Refer &amp; Earn
-          </Link>
-          <Link href="/kyc" className="btn-ghost">
-            Verify (KYC)
-          </Link>
-          <Link href="/settings" className="btn-ghost">
-            Settings
-          </Link>
-          {user?.isAdmin && (
-            <Link href="/admin" className="btn-primary">
-              Open Admin Panel
-            </Link>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Mode notice — Demo disclaimer, or a simple activation notice only when
@@ -147,35 +127,38 @@ function DashboardInner() {
         </div>
       ) : null}
 
-      {/* Portfolio summary */}
+      {/* Portfolio summary — each tile links to its detailed view. */}
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <div className="card">
-          <div className="flex items-center gap-2 text-sm text-slate-400">
-            <Wallet size={16} /> Portfolio value
+        <Link href="/portfolio" className="card-hover group">
+          <div className="flex items-center justify-between text-sm text-slate-400">
+            <span className="flex items-center gap-2"><Wallet size={16} /> Portfolio value</span>
+            <ChevronRight size={16} className="text-slate-600 transition-colors group-hover:text-brand-blue" />
           </div>
           <div className="mt-2 text-3xl font-bold text-white">{formatCurrency(portfolioUsd)}</div>
           <div className={cn('mt-1 text-xs', mode === 'DEMO' ? 'text-brand-emerald' : 'text-brand-blue')}>
             {mode === 'DEMO' ? 'Demo balance' : 'Live balance'}
           </div>
-        </div>
-        <div className="card">
-          <div className="flex items-center gap-2 text-sm text-slate-400">
-            <ListOrderedIcon size={16} /> Open orders
+        </Link>
+        <Link href="/trading" className="card-hover group">
+          <div className="flex items-center justify-between text-sm text-slate-400">
+            <span className="flex items-center gap-2"><ListOrderedIcon size={16} /> Open orders</span>
+            <ChevronRight size={16} className="text-slate-600 transition-colors group-hover:text-brand-blue" />
           </div>
           <div className="mt-2 text-3xl font-bold text-white">
             {orders.filter((o) => o.status === 'OPEN').length}
           </div>
           <div className="mt-1 text-xs text-slate-500">{orders.length} total</div>
-        </div>
-        <div className="card">
-          <div className="flex items-center gap-2 text-sm text-slate-400">
-            <ArrowDownToLine size={16} /> Pending withdrawals
+        </Link>
+        <Link href="/wallet?tab=HISTORY" className="card-hover group">
+          <div className="flex items-center justify-between text-sm text-slate-400">
+            <span className="flex items-center gap-2"><ArrowDownToLine size={16} /> Pending withdrawals</span>
+            <ChevronRight size={16} className="text-slate-600 transition-colors group-hover:text-brand-blue" />
           </div>
           <div className="mt-2 text-3xl font-bold text-white">
             {txns.filter((t) => t.type === 'WITHDRAWAL' && t.status === 'PENDING').length}
           </div>
           <div className="mt-1 text-xs text-slate-500">Awaiting approval</div>
-        </div>
+        </Link>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
