@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Wallet, ArrowDownToLine, ListOrderedIcon, Shield, ChevronRight } from 'lucide-react';
+import { Wallet, Shield, ChevronRight, TrendingUp, TrendingDown, Newspaper, PieChart, ArrowRight } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { AuthGuard } from '@/components/AuthGuard';
 import { ModeSwitcher } from '@/components/ModeSwitcher';
@@ -10,7 +10,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useMode } from '@/lib/useMode';
 import { useLiveSync } from '@/lib/useLiveSync';
-import { formatCurrency, cn } from '@/lib/utils';
+import { useTickers, assetName, type Ticker } from '@/lib/useTickers';
+import { formatCurrency, formatPercent, cn } from '@/lib/utils';
 
 interface WalletRow {
   id: string;
@@ -18,43 +19,34 @@ interface WalletRow {
   balance: string;
   locked: string;
 }
-interface OrderRow {
-  id: string;
-  symbol: string;
-  side: string;
-  type: string;
-  price: string;
-  amount: string;
-  status: string;
-  createdAt: string;
-}
-interface TxRow {
-  id: string;
-  type: string;
-  asset: string;
-  amount: string;
-  status: string;
-  createdAt: string;
-}
 
 // Rough USD reference prices for portfolio valuation (demo).
 const REF: Record<string, number> = { USDT: 1, BTC: 67000, ETH: 3500 };
+// Palette for the asset-allocation bar / legend.
+const ALLOC_COLORS = ['#0EA5E9', '#22D3EE', '#34D399', '#F59E0B', '#A78BFA', '#F87171'];
+
+// A single market-mover row (used by Top gainers / losers).
+function MoverRow({ t }: { t: Ticker }) {
+  return (
+    <Link href={`/trading?symbol=${t.symbol}`} className="flex items-center justify-between rounded-lg px-2 py-1.5 transition hover:bg-white/5">
+      <span className="text-sm font-medium text-white">{assetName(t.symbol)}<span className="text-slate-500">/USDT</span></span>
+      <span className="flex items-center gap-3">
+        <span className="font-mono text-sm text-slate-300">${t.price.toLocaleString(undefined, { maximumFractionDigits: t.price < 2 ? 4 : 2 })}</span>
+        <span className={cn('w-16 text-right font-mono text-sm font-semibold', t.change >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{formatPercent(t.change)}</span>
+      </span>
+    </Link>
+  );
+}
 
 function DashboardInner() {
   const { user } = useAuth();
   const { mode } = useMode();
   const [wallets, setWallets] = useState<WalletRow[]>([]);
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [txns, setTxns] = useState<TxRow[]>([]);
   const [achievements, setAchievements] = useState<{ title: string; desc: string; icon: string; earned: boolean }[]>([]);
-  const [wdAsset, setWdAsset] = useState('USDT');
-  const [wdAmount, setWdAmount] = useState('');
-  const [wdMsg, setWdMsg] = useState<string | null>(null);
+  const { tickers } = useTickers(8000);
 
   const load = useCallback(() => {
     api.get<WalletRow[]>('/api/account/wallets').then(setWallets).catch(() => {});
-    api.get<OrderRow[]>('/api/account/orders').then(setOrders).catch(() => {});
-    api.get<TxRow[]>('/api/account/transactions').then(setTxns).catch(() => {});
     api
       .get<{ achievements: typeof achievements }>('/api/account/achievements')
       .then((d) => setAchievements(d.achievements))
@@ -70,18 +62,16 @@ function DashboardInner() {
 
   const portfolioUsd = wallets.reduce((sum, w) => sum + parseFloat(w.balance) * (REF[w.asset] ?? 0), 0);
 
-  const submitWithdraw = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setWdMsg(null);
-    try {
-      await api.post('/api/account/withdraw', { asset: wdAsset, amount: parseFloat(wdAmount) });
-      setWdMsg('Withdrawal submitted — pending admin approval.');
-      setWdAmount('');
-      load();
-    } catch (err) {
-      setWdMsg(err instanceof Error ? err.message : 'Failed');
-    }
-  };
+  // Market insights derived from the live ticker feed.
+  const gainers = [...tickers].sort((a, b) => b.change - a.change).slice(0, 3);
+  const losers = [...tickers].sort((a, b) => a.change - b.change).slice(0, 3);
+  const trending = tickers.slice(0, 6);
+  // Asset allocation (share of portfolio value per asset).
+  const allocation = wallets
+    .map((w) => ({ asset: w.asset, usd: parseFloat(w.balance) * (REF[w.asset] ?? 0) }))
+    .filter((a) => a.usd > 0)
+    .sort((a, b) => b.usd - a.usd);
+  const allocTotal = allocation.reduce((s, a) => s + a.usd, 0) || 1;
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
@@ -127,148 +117,118 @@ function DashboardInner() {
         </div>
       ) : null}
 
-      {/* Portfolio summary — each tile links to its detailed view. */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <Link href="/portfolio" className="card-hover group">
+      {/* Account overview + asset allocation */}
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <Link href="/portfolio" className="card-hover group lg:col-span-2">
           <div className="flex items-center justify-between text-sm text-slate-400">
             <span className="flex items-center gap-2"><Wallet size={16} /> Portfolio value</span>
             <ChevronRight size={16} className="text-slate-600 transition-colors group-hover:text-brand-blue" />
           </div>
-          <div className="mt-2 text-3xl font-bold text-white">{formatCurrency(portfolioUsd)}</div>
+          <div className="mt-2 text-4xl font-bold text-white">{formatCurrency(portfolioUsd)}</div>
           <div className={cn('mt-1 text-xs', mode === 'DEMO' ? 'text-brand-emerald' : 'text-brand-blue')}>
-            {mode === 'DEMO' ? 'Demo balance' : 'Live balance'}
+            {mode === 'DEMO' ? 'Demo balance' : 'Live balance'} · {allocation.length} asset{allocation.length === 1 ? '' : 's'}
           </div>
-        </Link>
-        <Link href="/trading" className="card-hover group">
-          <div className="flex items-center justify-between text-sm text-slate-400">
-            <span className="flex items-center gap-2"><ListOrderedIcon size={16} /> Open orders</span>
-            <ChevronRight size={16} className="text-slate-600 transition-colors group-hover:text-brand-blue" />
-          </div>
-          <div className="mt-2 text-3xl font-bold text-white">
-            {orders.filter((o) => o.status === 'OPEN').length}
-          </div>
-          <div className="mt-1 text-xs text-slate-500">{orders.length} total</div>
-        </Link>
-        <Link href="/wallet?tab=HISTORY" className="card-hover group">
-          <div className="flex items-center justify-between text-sm text-slate-400">
-            <span className="flex items-center gap-2"><ArrowDownToLine size={16} /> Pending withdrawals</span>
-            <ChevronRight size={16} className="text-slate-600 transition-colors group-hover:text-brand-blue" />
-          </div>
-          <div className="mt-2 text-3xl font-bold text-white">
-            {txns.filter((t) => t.type === 'WITHDRAWAL' && t.status === 'PENDING').length}
-          </div>
-          <div className="mt-1 text-xs text-slate-500">Awaiting approval</div>
-        </Link>
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        {/* Wallets */}
-        <div className="card lg:col-span-2">
-          <h2 className="mb-4 font-semibold text-white">Wallets</h2>
-          <div className="space-y-2">
-            {wallets.map((w) => (
-              <div key={w.id} className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-gradient text-xs font-bold text-white">
-                    {w.asset.slice(0, 3)}
-                  </div>
-                  <span className="font-medium text-white">{w.asset}</span>
-                </div>
-                <div className="text-right font-mono text-white">{parseFloat(w.balance).toLocaleString()}</div>
+          {allocation.length > 0 && (
+            <div className="mt-4">
+              <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
+                {allocation.slice(0, 6).map((a, i) => (
+                  <div key={a.asset} className="h-full" style={{ width: `${(a.usd / allocTotal) * 100}%`, background: ALLOC_COLORS[i % 6] }} />
+                ))}
               </div>
-            ))}
-            {wallets.length === 0 && <p className="text-sm text-slate-500">No wallets yet.</p>}
-          </div>
-        </div>
-
-        {/* Withdraw */}
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                {allocation.slice(0, 6).map((a, i) => (
+                  <span key={a.asset} className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full" style={{ background: ALLOC_COLORS[i % 6] }} />
+                    {a.asset} <span className="text-slate-500">{((a.usd / allocTotal) * 100).toFixed(0)}%</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </Link>
         <div className="card">
-          <h2 className="mb-4 font-semibold text-white">Request withdrawal</h2>
-          <form onSubmit={submitWithdraw} className="space-y-3">
-            <div>
-              <label className="label">Asset</label>
-              <select value={wdAsset} onChange={(e) => setWdAsset(e.target.value)} className="input">
-                {wallets.map((w) => (
-                  <option key={w.asset} value={w.asset}>
-                    {w.asset}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Amount</label>
-              <input value={wdAmount} onChange={(e) => setWdAmount(e.target.value)} type="number" className="input" placeholder="0.00" required />
-            </div>
-            <button className="btn-primary w-full">Submit request</button>
-            {wdMsg && <p className="text-xs text-slate-300">{wdMsg}</p>}
-            <p className="text-xs text-slate-500">Withdrawals require approval from a Withdrawal Admin.</p>
-          </form>
-        </div>
-      </div>
-
-      {/* Achievements */}
-      {achievements.length > 0 && (
-        <div className="card mt-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-white">Achievements</h2>
-            <span className="text-sm text-slate-400">
-              {achievements.filter((a) => a.earned).length}/{achievements.length} unlocked
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {achievements.map((a) => (
-              <div
-                key={a.title}
-                className={cn(
-                  'rounded-xl border p-3 text-center transition',
-                  a.earned ? 'border-brand-gold/30 bg-brand-gold/10' : 'border-white/10 bg-white/5 opacity-50',
-                )}
-                title={a.desc}
-              >
-                <div className={cn('text-2xl', !a.earned && 'grayscale')}>{a.icon}</div>
-                <div className="mt-1 text-xs font-medium text-white">{a.title}</div>
-                <div className="text-[10px] text-slate-500">{a.desc}</div>
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white"><PieChart size={16} className="text-brand-blue" /> Your assets</div>
+          <div className="space-y-1.5">
+            {allocation.length === 0 && <p className="text-sm text-slate-500">No holdings yet.</p>}
+            {allocation.slice(0, 5).map((a) => (
+              <div key={a.asset} className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-sm">
+                <span className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-bold text-white">{a.asset.slice(0, 3)}</span>
+                  <span className="text-white">{a.asset}</span>
+                </span>
+                <span className="font-mono text-white">{formatCurrency(a.usd)}</span>
               </div>
             ))}
           </div>
+          <Link href="/wallet" className="mt-3 flex items-center justify-center gap-1 text-xs font-semibold text-brand-blue hover:underline">Manage wallet <ArrowRight size={13} /></Link>
         </div>
-      )}
+      </div>
 
-      {/* Recent orders */}
+      {/* Market highlights — top movers */}
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="card">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white"><TrendingUp size={16} className="text-brand-emerald" /> Top gainers (24h)</div>
+          <div className="space-y-1">
+            {gainers.map((t) => <MoverRow key={t.symbol} t={t} />)}
+            {gainers.length === 0 && <p className="text-sm text-slate-500">Loading market data…</p>}
+          </div>
+        </div>
+        <div className="card">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white"><TrendingDown size={16} className="text-red-400" /> Top losers (24h)</div>
+          <div className="space-y-1">
+            {losers.map((t) => <MoverRow key={t.symbol} t={t} />)}
+            {losers.length === 0 && <p className="text-sm text-slate-500">Loading market data…</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* Trending markets / watchlist */}
       <div className="card mt-6">
-        <h2 className="mb-4 font-semibold text-white">Recent orders</h2>
-        {orders.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            No orders yet. <Link href="/trading" className="text-brand-blue hover:underline">Place a trade</Link>.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="pb-2">Pair</th>
-                  <th className="pb-2">Side</th>
-                  <th className="pb-2">Type</th>
-                  <th className="pb-2 text-right">Price</th>
-                  <th className="pb-2 text-right">Amount</th>
-                  <th className="pb-2 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {orders.slice(0, 8).map((o) => (
-                  <tr key={o.id}>
-                    <td className="py-2.5 font-medium text-white">{o.symbol}</td>
-                    <td className={cn('py-2.5', o.side === 'BUY' ? 'text-brand-emerald' : 'text-red-400')}>{o.side}</td>
-                    <td className="py-2.5 text-slate-400">{o.type}</td>
-                    <td className="py-2.5 text-right font-mono text-slate-300">${parseFloat(o.price).toLocaleString()}</td>
-                    <td className="py-2.5 text-right font-mono text-slate-300">{parseFloat(o.amount)}</td>
-                    <td className="py-2.5 text-right">
-                      <span className="badge bg-white/5 text-slate-300">{o.status}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold text-white">Trending markets</h2>
+          <Link href="/markets" className="flex items-center gap-1 text-xs font-semibold text-brand-blue hover:underline">All markets <ArrowRight size={13} /></Link>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {trending.map((t) => (
+            <Link key={t.symbol} href={`/trading?symbol=${t.symbol}`} className="flex items-center justify-between rounded-xl bg-white/5 px-3 py-2.5 transition hover:bg-white/10">
+              <span className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-blue/10 text-[10px] font-bold text-brand-blue">{assetName(t.symbol).slice(0, 3)}</span>
+                <span className="text-sm font-semibold text-white">{assetName(t.symbol)}<span className="text-slate-500">/USDT</span></span>
+              </span>
+              <span className="text-right">
+                <span className="block font-mono text-sm text-white">${t.price.toLocaleString(undefined, { maximumFractionDigits: t.price < 2 ? 4 : 2 })}</span>
+                <span className={cn('block font-mono text-xs', t.change >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{formatPercent(t.change)}</span>
+              </span>
+            </Link>
+          ))}
+          {trending.length === 0 && <p className="text-sm text-slate-500">Loading markets…</p>}
+        </div>
+      </div>
+
+      {/* Latest news + Achievements */}
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <Link href="/news" className="card-hover group flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-white"><Newspaper size={16} className="text-brand-cyan" /> Latest market news</div>
+            <p className="mt-2 text-sm text-slate-400">Stay ahead with curated crypto headlines, analysis and macro updates from the News Center.</p>
+          </div>
+          <span className="mt-4 flex items-center gap-1 text-xs font-semibold text-brand-blue group-hover:underline">Open News Center <ArrowRight size={13} /></span>
+        </Link>
+        {achievements.length > 0 && (
+          <div className="card lg:col-span-2">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-semibold text-white">Achievements</h2>
+              <span className="text-sm text-slate-400">{achievements.filter((a) => a.earned).length}/{achievements.length} unlocked</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {achievements.map((a) => (
+                <div key={a.title} className={cn('rounded-xl border p-3 text-center transition', a.earned ? 'border-brand-gold/30 bg-brand-gold/10' : 'border-white/10 bg-white/5 opacity-50')} title={a.desc}>
+                  <div className={cn('text-2xl', !a.earned && 'grayscale')}>{a.icon}</div>
+                  <div className="mt-1 text-xs font-medium text-white">{a.title}</div>
+                  <div className="text-[10px] text-slate-500">{a.desc}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
