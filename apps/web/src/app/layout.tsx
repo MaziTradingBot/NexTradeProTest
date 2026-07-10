@@ -5,6 +5,7 @@ import { WelcomeTour } from '@/components/WelcomeTour';
 import { MaintenanceGate } from '@/components/MaintenanceGate';
 import { ModeBadge } from '@/components/ModeBadge';
 import { MobileAppNav } from '@/components/MobileAppNav';
+import { MobileInstallPrompt } from '@/components/MobileInstallPrompt';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://nextradepro.vercel.app'),
@@ -58,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ModeBadge />
         <MaintenanceGate>{children}</MaintenanceGate>
         <MobileAppNav />
+        <MobileInstallPrompt />
         <SupportButton />
         <WelcomeTour />
       </body>
