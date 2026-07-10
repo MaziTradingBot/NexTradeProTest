@@ -10,10 +10,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { PanelLeftClose, PanelLeftOpen, ChevronDown } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, ChevronDown, X, Plus } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { OrderBook } from '@/components/OrderBook';
-import { RecentTrades } from '@/components/RecentTrades';
 import TradingViewChart from '@/components/TradingViewChart';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
@@ -75,6 +74,9 @@ function TradingTerminal() {
   const [wallets, setWallets] = useState<{ asset: string; balance: string }[]>([]);
   // Bottom workspace panel — tabbed like a pro terminal (Positions / Orders).
   const [bottomTab, setBottomTab] = useState<'POSITIONS' | 'ORDERS'>('POSITIONS');
+  // Mobile order-entry sheet — the Trade screen stays market-only; a Place Order
+  // button opens the ticket as a bottom sheet.
+  const [orderOpen, setOrderOpen] = useState(false);
   // Collapsible left watchlist rail; the preference persists across sessions.
   const [railCollapsed, setRailCollapsed] = useState(false);
   useEffect(() => { setRailCollapsed(localStorage.getItem('nxp-trade-rail') === '1'); }, []);
@@ -484,15 +486,26 @@ function TradingTerminal() {
           </div>
         </div>
 
-        {/* Order book + recent trades */}
+        {/* Order book */}
         <div className="relative space-y-4">
           <ResizeHandle side="left" onPointerDown={startResize('book', -1)} onDoubleClick={resetLayout} />
           <OrderBook price={price} symbol={symbol} />
-          <RecentTrades price={price} symbol={symbol} />
         </div>
 
-        {/* Right column: order ticket (pair selection moved to the header dropdown) */}
-        <div className="relative space-y-4">
+        {/* Order entry — an inline column on desktop; on mobile it becomes a
+            slide-up sheet opened by the Place Order button, so the Trade screen
+            itself stays focused on market info. */}
+        <div
+          className={cn(
+            'relative space-y-4',
+            'max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-[70] max-lg:max-h-[88dvh] max-lg:overflow-y-auto max-lg:rounded-t-2xl max-lg:border-t max-lg:border-white/10 max-lg:bg-bg-surface max-lg:p-3 max-lg:pb-[calc(1rem+var(--safe-bottom))] max-lg:shadow-card max-lg:transition-transform max-lg:duration-300',
+            orderOpen ? 'max-lg:translate-y-0' : 'max-lg:pointer-events-none max-lg:translate-y-full',
+          )}
+        >
+          <div className="mb-1 flex items-center justify-between lg:hidden">
+            <span className="text-sm font-semibold text-white">Place Order · {assetName(symbol)}/USDT</span>
+            <button onClick={() => setOrderOpen(false)} className="rounded-lg p-1.5 text-slate-400 transition hover:text-white" aria-label="Close order form"><X size={18} /></button>
+          </div>
           <ResizeHandle side="left" onPointerDown={startResize('entry', -1)} onDoubleClick={resetLayout} />
         {/* Order ticket */}
         <div className="card p-5">
@@ -696,6 +709,19 @@ function TradingTerminal() {
         </div>
         </div>
       </div>
+
+      {/* Mobile: Place Order trigger + sheet backdrop (desktop shows the ticket
+          inline, so these are lg:hidden). Leaves room on the right for the
+          floating support button. */}
+      <button
+        onClick={() => setOrderOpen(true)}
+        className="btn-primary fixed bottom-[calc(4.75rem+var(--safe-bottom))] left-4 right-20 z-[65] py-3 text-base lg:hidden"
+      >
+        <Plus size={18} /> Place Order
+      </button>
+      {orderOpen && (
+        <div className="fixed inset-0 z-[69] bg-black/60 backdrop-blur-sm lg:hidden" onClick={() => setOrderOpen(false)} aria-hidden />
+      )}
 
       {/* Bottom workspace — tabbed Positions / Orders (pro-terminal style) */}
       {user && (
