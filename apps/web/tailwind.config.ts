@@ -74,7 +74,7 @@ const config: Config = {
         float: 'float 6s ease-in-out infinite',
         shimmer: 'shimmer 2s infinite',
         'pulse-glow': 'pulse-glow 3s ease-in-out infinite',
-        ticker: 'ticker 90s linear infinite',
+        ticker: 'ticker 180s linear infinite',
         'slide-up': 'slide-up 0.28s ease-out',
       },
     },
