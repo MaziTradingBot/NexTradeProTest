@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Area,
@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, ChevronDown } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { OrderBook } from '@/components/OrderBook';
 import { RecentTrades } from '@/components/RecentTrades';
@@ -18,7 +18,7 @@ import TradingViewChart from '@/components/TradingViewChart';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/store';
 import { useMode } from '@/lib/useMode';
-import { useTickers, assetName } from '@/lib/useTickers';
+import { useTickers, assetName, type Ticker } from '@/lib/useTickers';
 import { usePanelLayout } from '@/lib/usePanelLayout';
 import { useTradingAccount, liveMetrics, positionPnl, type Position } from '@/lib/useTradingAccount';
 import { useLiveSync } from '@/lib/useLiveSync';
@@ -70,7 +70,6 @@ function TradingTerminal() {
   const [trailingPct, setTrailingPct] = useState('');
   const [stopLoss, setStopLoss] = useState('');
   const [takeProfit, setTakeProfit] = useState('');
-  const [pairQuery, setPairQuery] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
   const [wallets, setWallets] = useState<{ asset: string; balance: string }[]>([]);
@@ -241,72 +240,54 @@ function TradingTerminal() {
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-24 sm:px-6 lg:px-8">
-      {/* Symbol header */}
-      <div className="card mb-4 flex flex-wrap items-center gap-6 p-4">
-        <div>
-          <div className="text-xs text-slate-400">Pair</div>
-          <div className="text-xl font-bold text-white">{assetName(symbol)}/USDT</div>
-        </div>
-        <div>
-          <div className="text-xs text-slate-400">Price</div>
-          <div className="font-mono text-xl font-semibold text-white">${price.toLocaleString()}</div>
-        </div>
-        {ticker && (
+      {/* Consolidated symbol + market-data header — pair dropdown, live price and
+          the key 24h / perp stats in a single clean row. */}
+      <div className="card mb-4 p-4">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <PairPicker symbol={symbol} tickers={tickers} onSelect={setSymbol} />
           <div>
-            <div className="text-xs text-slate-400">24h Change</div>
-            <div className={cn('font-mono font-semibold', ticker.change >= 0 ? 'text-brand-emerald' : 'text-red-400')}>
-              {formatPercent(ticker.change)}
-            </div>
+            <div className="text-[10px] uppercase tracking-wide text-slate-500">Price</div>
+            <div className="font-mono text-xl font-semibold text-white">${price.toLocaleString(undefined, { maximumFractionDigits: price < 2 ? 4 : 2 })}</div>
           </div>
-        )}
-        {user && (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2">
-            <div className="text-xs text-slate-400">{mode === 'DEMO' ? 'Demo' : 'Live'} Balance</div>
-            <div className="font-mono text-lg font-semibold text-brand-emerald">
-              ${parseFloat(wallets.find((w) => w.asset === 'USDT')?.balance ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
-              <span className="text-xs text-slate-400">USDT</span>
-            </div>
-          </div>
-        )}
-        <span className={cn('ml-auto badge', isLive ? 'bg-brand-blue/15 text-brand-blue' : 'bg-brand-gold/10 text-brand-gold')}>
-          {isLive ? 'Live Mode' : 'Simulated execution'}
-        </span>
-      </div>
-
-      {/* Market-data strip — live 24h stats plus derived (simulated) perp
-          metrics, scrollable on small screens. */}
-      {ticker && (() => {
-        const dp = price < 2 ? 4 : 2;
-        const compact = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n.toFixed(0));
-        const indexPrice = price * (1 + Math.sin(price * 0.001) * 0.0003);
-        // Real perp funding / OI from the market-data service when available,
-        // otherwise a clearly-simulated fallback derived from price/volume.
-        const funding = ticker.fundingRate != null
-          ? ticker.fundingRate * 100
-          : (ticker.change >= 0 ? 1 : -1) * (0.005 + Math.abs(ticker.change) * 0.0009);
-        const oi = ticker.openInterest != null && ticker.openInterest > 0
-          ? ticker.openInterest * price
-          : ticker.volume * price * 0.12;
-        const stats: { label: string; value: string; tone?: 'up' | 'down' }[] = [
-          { label: 'Mark', value: usd(price, dp) },
-          { label: 'Index', value: usd(indexPrice, dp) },
-          { label: 'Funding / 8h', value: `${funding >= 0 ? '+' : ''}${funding.toFixed(4)}%`, tone: funding >= 0 ? 'up' : 'down' },
-          { label: 'Open Interest', value: `$${compact(oi)}` },
-          { label: '24h High', value: usd(ticker.high, dp) },
-          { label: '24h Low', value: usd(ticker.low, dp) },
-          { label: '24h Vol', value: compact(ticker.volume) },
-        ];
-        return (
-          <div className="no-scrollbar mb-4 flex items-stretch gap-6 overflow-x-auto rounded-xl border border-white/10 bg-bg-surface/60 px-4 py-2.5">
-            {stats.map((s) => (
-              <div key={s.label} className="shrink-0">
+          {ticker && (() => {
+            const dp = price < 2 ? 4 : 2;
+            const compact = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n.toFixed(0));
+            const funding = ticker.fundingRate != null
+              ? ticker.fundingRate * 100
+              : (ticker.change >= 0 ? 1 : -1) * (0.005 + Math.abs(ticker.change) * 0.0009);
+            const oi = ticker.openInterest != null && ticker.openInterest > 0 ? ticker.openInterest * price : ticker.volume * price * 0.12;
+            // Trimmed set — Mark/Index dropped (≈ price). Less-critical stats hide
+            // on smaller screens to keep the row clean.
+            const stats: { label: string; value: string; tone?: 'up' | 'down'; hide?: string }[] = [
+              { label: '24h Change', value: formatPercent(ticker.change), tone: ticker.change >= 0 ? 'up' : 'down' },
+              { label: 'Funding / 8h', value: `${funding >= 0 ? '+' : ''}${funding.toFixed(4)}%`, tone: funding >= 0 ? 'up' : 'down', hide: 'hidden sm:block' },
+              { label: 'Open Interest', value: `$${compact(oi)}`, hide: 'hidden md:block' },
+              { label: '24h High', value: usd(ticker.high, dp), hide: 'hidden lg:block' },
+              { label: '24h Low', value: usd(ticker.low, dp), hide: 'hidden lg:block' },
+              { label: '24h Vol', value: compact(ticker.volume), hide: 'hidden xl:block' },
+            ];
+            return stats.map((s) => (
+              <div key={s.label} className={s.hide}>
                 <div className="text-[10px] uppercase tracking-wide text-slate-500">{s.label}</div>
                 <div className={cn('font-mono text-sm font-semibold', s.tone === 'up' ? 'text-brand-emerald' : s.tone === 'down' ? 'text-red-400' : 'text-white')}>{s.value}</div>
               </div>
-            ))}
+            ));
+          })()}
+          <div className="ml-auto flex items-center gap-3">
+            {user && (
+              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-right">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">{mode === 'DEMO' ? 'Demo' : 'Live'} Balance</div>
+                <div className="font-mono text-sm font-semibold text-brand-emerald">
+                  ${parseFloat(wallets.find((w) => w.asset === 'USDT')?.balance ?? '0').toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-[10px] text-slate-400">USDT</span>
+                </div>
+              </div>
+            )}
+            <span className={cn('badge', isLive ? 'bg-brand-blue/15 text-brand-blue' : 'bg-brand-gold/10 text-brand-gold')}>
+              {isLive ? 'Live' : 'Sim'}
+            </span>
           </div>
-        );
-      })()}
+        </div>
+      </div>
 
       {copyFrom && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/10 px-4 py-3 text-sm text-ink-soft">
@@ -358,7 +339,7 @@ function TradingTerminal() {
               </span>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {[
               { label: 'Balance', value: usd(metrics.balance) },
               { label: 'Equity', value: usd(metrics.equity) },
@@ -368,15 +349,11 @@ function TradingTerminal() {
                 tone: metrics.floatingPnl > 0 ? 'up' : metrics.floatingPnl < 0 ? 'down' : undefined,
               },
               { label: 'Free Margin', value: usd(metrics.freeMargin) },
-              { label: 'Used Margin', value: usd(metrics.usedMargin) },
               {
                 label: 'Margin Level',
                 value: metrics.marginLevel != null ? `${metrics.marginLevel.toFixed(1)}%` : '—',
               },
               { label: 'Open Positions', value: String(metrics.openPositions) },
-              { label: 'Total Exposure', value: usd(metrics.exposure) },
-              { label: 'Available Margin', value: usd(metrics.availableMargin) },
-              { label: 'Reserved', value: usd(summary.locked) },
             ].map((m) => (
               <div key={m.label} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
                 <div className="text-[11px] uppercase tracking-wide text-slate-500">{m.label}</div>
@@ -512,46 +489,9 @@ function TradingTerminal() {
           <RecentTrades price={price} symbol={symbol} />
         </div>
 
-        {/* Right column: pair selector + order ticket */}
+        {/* Right column: order ticket (pair selection moved to the header dropdown) */}
         <div className="relative space-y-4">
           <ResizeHandle side="left" onPointerDown={startResize('entry', -1)} onDoubleClick={resetLayout} />
-        {/* Pair selector */}
-        <div className="card p-0">
-          <div className="border-b border-white/10 px-4 py-3">
-            <div className="mb-2 text-sm font-semibold text-white">Pairs</div>
-            <input
-              value={pairQuery}
-              onChange={(e) => setPairQuery(e.target.value)}
-              placeholder="Search…"
-              className="input py-1.5 text-xs"
-            />
-          </div>
-          <div className="max-h-56 overflow-y-auto">
-            {tickers
-              .filter((t) => assetName(t.symbol).toLowerCase().includes(pairQuery.toLowerCase()))
-              .map((t) => (
-                <button
-                  key={t.symbol}
-                  onClick={() => setSymbol(t.symbol)}
-                  className={cn(
-                    'flex w-full items-center justify-between px-4 py-2 text-left text-xs transition hover:bg-white/5',
-                    symbol === t.symbol && 'bg-white/5',
-                  )}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="font-semibold text-white">{assetName(t.symbol)}</span>
-                    <span className="text-slate-500">/USDT</span>
-                  </span>
-                  <span className="text-right">
-                    <span className="block font-mono text-slate-300">${t.price.toLocaleString(undefined, { maximumFractionDigits: t.price < 2 ? 4 : 2 })}</span>
-                    <span className={cn('block font-mono', t.change >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{formatPercent(t.change)}</span>
-                  </span>
-                </button>
-              ))}
-            {tickers.length === 0 && <div className="px-4 py-6 text-center text-xs text-slate-500">Loading pairs…</div>}
-          </div>
-        </div>
-
         {/* Order ticket */}
         <div className="card p-5">
           {/* Spot / Futures */}
@@ -910,6 +850,59 @@ function TradingTerminal() {
       )}
       <div className="h-16" />
     </section>
+  );
+}
+
+// Header pair selector — a searchable dropdown that replaces the old sidebar
+// "Pairs" list, freeing a column while keeping fast pair switching.
+function PairPicker({ symbol, tickers, onSelect }: { symbol: string; tickers: Ticker[]; onSelect: (s: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const list = tickers.filter((t) => assetName(t.symbol).toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-brand-blue/40"
+      >
+        <span className="text-lg font-bold text-white">{assetName(symbol)}<span className="text-slate-500">/USDT</span></span>
+        <ChevronDown size={16} className={cn('text-slate-400 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div role="listbox" className="absolute left-0 top-full z-40 mt-2 w-64 overflow-hidden rounded-2xl border border-white/10 bg-bg-elevated shadow-card">
+          <div className="border-b border-white/10 p-2">
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search pairs…" className="input py-1.5 text-xs" />
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {list.map((t) => (
+              <button
+                key={t.symbol}
+                onClick={() => { onSelect(t.symbol); setOpen(false); setQ(''); }}
+                className={cn('flex w-full items-center justify-between px-3 py-2 text-left text-xs transition hover:bg-white/5', symbol === t.symbol && 'bg-white/5')}
+              >
+                <span className="font-semibold text-white">{assetName(t.symbol)}<span className="text-slate-500">/USDT</span></span>
+                <span className="text-right">
+                  <span className="block font-mono text-slate-300">${t.price.toLocaleString(undefined, { maximumFractionDigits: t.price < 2 ? 4 : 2 })}</span>
+                  <span className={cn('block font-mono', t.change >= 0 ? 'text-brand-emerald' : 'text-red-400')}>{formatPercent(t.change)}</span>
+                </span>
+              </button>
+            ))}
+            {list.length === 0 && <div className="px-3 py-6 text-center text-xs text-slate-500">{tickers.length === 0 ? 'Loading pairs…' : 'No pairs found.'}</div>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
