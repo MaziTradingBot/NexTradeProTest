@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Wallet, Shield, ChevronRight, TrendingUp, TrendingDown, Newspaper, PieChart, ArrowRight } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
@@ -20,8 +20,9 @@ interface WalletRow {
   locked: string;
 }
 
-// Rough USD reference prices for portfolio valuation (demo).
-const REF: Record<string, number> = { USDT: 1, BTC: 67000, ETH: 3500 };
+// Fallback USD reference prices for stablecoins / when the live feed lacks a
+// pair. Live ticker prices are preferred (see priceOf below).
+const REF: Record<string, number> = { USDT: 1, USDC: 1, DAI: 1, BUSD: 1, TUSD: 1 };
 // Palette for the asset-allocation bar / legend.
 const ALLOC_COLORS = ['#0EA5E9', '#22D3EE', '#34D399', '#F59E0B', '#A78BFA', '#F87171'];
 
@@ -60,7 +61,18 @@ function DashboardInner() {
   // Real-time refresh on any server-side balance change (e.g. admin funding).
   useLiveSync(load);
 
-  const portfolioUsd = wallets.reduce((sum, w) => sum + parseFloat(w.balance) * (REF[w.asset] ?? 0), 0);
+  // Value each asset from the live ticker feed (e.g. BTC → BTCUSDT price),
+  // falling back to the stablecoin reference so holdings like SOL/BNB/XRP are
+  // counted instead of showing $0. Keeps the dashboard total consistent with
+  // live market data across every asset the user holds.
+  const priceMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const t of tickers) m[assetName(t.symbol)] = t.price;
+    return m;
+  }, [tickers]);
+  const priceOf = (asset: string) => priceMap[asset] ?? REF[asset] ?? 0;
+
+  const portfolioUsd = wallets.reduce((sum, w) => sum + parseFloat(w.balance) * priceOf(w.asset), 0);
 
   // Market insights derived from the live ticker feed.
   const gainers = [...tickers].sort((a, b) => b.change - a.change).slice(0, 3);
@@ -68,7 +80,7 @@ function DashboardInner() {
   const trending = tickers.slice(0, 6);
   // Asset allocation (share of portfolio value per asset).
   const allocation = wallets
-    .map((w) => ({ asset: w.asset, usd: parseFloat(w.balance) * (REF[w.asset] ?? 0) }))
+    .map((w) => ({ asset: w.asset, usd: parseFloat(w.balance) * priceOf(w.asset) }))
     .filter((a) => a.usd > 0)
     .sort((a, b) => b.usd - a.usd);
   const allocTotal = allocation.reduce((s, a) => s + a.usd, 0) || 1;
